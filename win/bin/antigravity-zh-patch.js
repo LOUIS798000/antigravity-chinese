@@ -3,11 +3,11 @@
 
 const { execFileSync } = require('child_process');
 
-const PATCH_VERSION = 52;
+const PATCH_VERSION = 53;
 
 const overlaySource = String.raw`
 (() => {
-  const CURRENT_PATCH_VERSION = 52;
+  const CURRENT_PATCH_VERSION = 53;
   if (window.__antigravityZhPatchInstalled === CURRENT_PATCH_VERSION) return;
   if (window.__antigravityZhPatchObserver) {
     try { window.__antigravityZhPatchObserver.disconnect(); } catch {}
@@ -915,6 +915,41 @@ const overlaySource = String.raw`
     ["Review", "审查"],
     ["概述tab", "概览标签页"],
     ["审查tab", "审查标签页"],
+    ["Split Terminal", "拆分终端"],
+    ["Split terminal", "拆分终端"],
+    ["Split 终端", "拆分终端"],
+    ["Toggle Terminal", "切换终端"],
+    ["Toggle 终端", "切换终端"],
+    ["Kill Terminal", "终止终端"],
+    ["Focus Terminal", "聚焦终端"],
+    ["Clear Terminal", "清空终端"],
+    ["Split Editor", "拆分编辑器"],
+    ["Split editor", "拆分编辑器"],
+    ["Split Editor Right", "向右拆分编辑器"],
+    ["Split Editor Down", "向下拆分编辑器"],
+    ["Split Editor Left", "向左拆分编辑器"],
+    ["Split Editor Up", "向上拆分编辑器"],
+    ["Close Tab", "关闭标签页"],
+    ["Close tab", "关闭标签页"],
+    ["Close 标签页", "关闭标签页"],
+    ["Close Other Tabs", "关闭其他标签页"],
+    ["Close Tabs to the Right", "关闭右侧标签页"],
+    ["Close All Tabs", "关闭所有标签页"],
+    ["Close Saved Tabs", "关闭已保存的标签页"],
+    ["Close Window", "关闭窗口"],
+    ["Close Editor", "关闭编辑器"],
+    ["Close All Editors", "关闭所有编辑器"],
+    ["New Editor Window", "新建编辑器窗口"],
+    ["New editor window", "新建编辑器窗口"],
+    ["New Editor 窗口", "新建编辑器窗口"],
+    ["Select Next Conversation", "选择下一个对话"],
+    ["Select next conversation", "选择下一个对话"],
+    ["Select Next 对话", "选择下一个对话"],
+    ["Select Previous Conversation", "选择上一个对话"],
+    ["Select previous conversation", "选择上一个对话"],
+    ["Select Previous 对话", "选择上一个对话"],
+    ["Next Conversation", "下一个对话"],
+    ["Previous Conversation", "上一个对话"],
   ]);
 
   function formatDuration(text) {
