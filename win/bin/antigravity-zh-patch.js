@@ -3,11 +3,11 @@
 
 const { execFileSync } = require('child_process');
 
-const PATCH_VERSION = 53;
+const PATCH_VERSION = 54;
 
 const overlaySource = String.raw`
 (() => {
-  const CURRENT_PATCH_VERSION = 53;
+  const CURRENT_PATCH_VERSION = 54;
   if (window.__antigravityZhPatchInstalled === CURRENT_PATCH_VERSION) return;
   if (window.__antigravityZhPatchObserver) {
     try { window.__antigravityZhPatchObserver.disconnect(); } catch {}
@@ -950,6 +950,18 @@ const overlaySource = String.raw`
     ["Select Previous 对话", "选择上一个对话"],
     ["Next Conversation", "下一个对话"],
     ["Previous Conversation", "上一个对话"],
+    ["Open File Picker", "打开文件选择器"],
+    ["File Picker", "文件选择器"],
+    ["File picker", "文件选择器"],
+    ["文件 Picker", "文件选择器"],
+    ["Symbol Picker", "符号选择器"],
+    ["Color Picker", "颜色选择器"],
+    ["Emoji Picker", "表情选择器"],
+    ["Picker", "选择器"],
+    ["picker", "选择器"],
+    ["Media", "媒体"],
+    ["Upload Media", "上传媒体"],
+    ["Attach Media", "附加媒体"],
   ]);
 
   function formatDuration(text) {
