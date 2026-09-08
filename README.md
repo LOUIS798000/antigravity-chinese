@@ -1,81 +1,78 @@
-# 🌌 Antigravity 中文汉化补丁 (Antigravity Chinese Patch)
+# Antigravity 中文汉化补丁
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Platform: macOS / Windows](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows-brightgreen.svg)]()
-[![Target: Antigravity](https://img.shields.io/badge/Target-Antigravity-purple.svg)](https://antigravity.google/)
-
-面向 Google Antigravity 的轻量、非侵入式中文汉化增强补丁。
+面向 Google Antigravity 的轻量非侵入式中文补丁。
 
 ---
 
-### 🚀 一键安装（直接复制发给 Antigravity）
+### 一键安装
 
-将以下指令直接发送给 Antigravity 对话框，智能体即可自动完成拉取、配置与自启守护：
+复制以下指令发送给 Antigravity 对话框即可自动完成拉取与配置：
 
-```bash
+```text
 帮我执行 https://github.com/LOUIS798000/antigravity-chinese 这个项目的汉化，并配置开机自启动防止掉后台
 ```
 
 ---
 
-## ✨ 核心特性
+## 特性说明
 
-- ⚡ **微秒级单趟匹配**：组合大正则预编译单趟扫描，彻底告别旧版多正则遍历造成的卡顿与高 CPU 占用。
-- 🛡️ **绝对防死锁机制**：变动互斥锁 + 强幂等防护，设置页面与海量 DOM 秒开秒响应，绝不锁死主线程。
-- 🎯 **精准汉化，不过度侵入**：
-  - 核心菜单、面板、按钮与操作提示完整汉化。
-  - 斜杠快捷命令保留英文触发词，视觉附加括号中文说明（如 `/btw (快速提问)`），绝不污染命令输入。
-  - 严格保护代码块、终端、路径与模型名称，符合专业开发者使用习惯。
-- 🟢 **绿色纯净**：基于 Chrome DevTools Protocol (CDP) 注入，不修改客户端二进制与源代码，官方静默更新无冲突。
-- 🔄 **开机静默守护**：Windows 注册表 (HKCU\Run) / macOS LaunchAgent 静默常驻，防止后台掉线。
+- **性能轻量**：采用单趟正则匹配，降低扫描开销，减少界面卡顿。
+- **运行稳定**：具备 DOM 变动锁与重复替换防护，设置面板可正常展开，避免主线程死循环。
+- **适度汉化**：
+  - 覆盖常用菜单、设置项、按钮与提示文本。
+  - 斜杠命令保留英文触发词，仅附加中文括号说明（如 `/btw (快速提问)`），不影响指令输入。
+  - 代码块、终端输出、文件路径与模型名称等保持英文原样，避免过度汉化。
+- **非侵入式**：基于 CDP 协议动态注入，不改动客户端二进制文件。
+- **后台常驻**：支持配置为开机自启后台服务（Windows / macOS）。
 
 ---
 
-## 💻 手动快速开始
+## 手动安装
 
-### 依赖环境
-- 已安装最新版 Antigravity 客户端
+### 环境要求
+- 已安装 Antigravity 客户端
 - Node.js (>= 18)
 
-### macOS 安装
-```bash
-cd mac
-chmod +x install.sh uninstall.sh bin/antigravity-zh-patch.js
-./install.sh
-```
-
-### Windows 安装
-以 PowerShell 运行：
+### Windows
+在 PowerShell 中运行：
 ```powershell
 cd win
 Set-ExecutionPolicy -Scope CurrentUser RemoteSigned -Force
 .\install.ps1
 ```
 
-### 卸载恢复
-- **macOS**: `cd mac && ./uninstall.sh`
+### macOS
+在终端中运行：
+```bash
+cd mac
+chmod +x install.sh uninstall.sh bin/antigravity-zh-patch.js
+./install.sh
+```
+
+### 卸载
 - **Windows**: `cd win && .\uninstall.ps1`
+- **macOS**: `cd mac && ./uninstall.sh`
 
 ---
 
-## 📂 项目结构
+## 目录结构
 
 ```text
 antigravity-chinese/
-├── mac/                            # macOS 专属
-│   ├── bin/antigravity-zh-patch.js # 汉化注入引擎
-│   ├── install.sh                  # LaunchAgent 自动安装
+├── mac/                            # macOS 脚本
+│   ├── bin/antigravity-zh-patch.js # 汉化注入脚本
+│   ├── install.sh                  # 安装自启服务
 │   └── uninstall.sh                # 卸载清理脚本
-├── win/                            # Windows 专属
-│   ├── bin/antigravity-zh-patch.js # 汉化注入引擎
-│   ├── install.ps1                 # 注册表与开机自启动配置
-│   ├── start-silent.vbs            # 静默后台守护进程
-│   └── uninstall.ps1               # 停用与清理脚本
-└── README.md                       # 项目说明
+├── win/                            # Windows 脚本
+│   ├── bin/antigravity-zh-patch.js # 汉化注入脚本
+│   ├── install.ps1                 # 安装自启服务
+│   ├── start-silent.vbs            # 静默启动脚本
+│   └── uninstall.ps1               # 卸载清理脚本
+└── README.md                       # 说明文档
 ```
 
 ---
 
-## 📄 开源许可
+## 开源协议
 
-本项目遵循 [MIT License](LICENSE) 开源协议。
+[MIT License](LICENSE)
