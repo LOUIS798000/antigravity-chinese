@@ -7,3 +7,5 @@ win/logs/*.txt
 
 *.bak
 *.tmp
+
+win/node_path.txt
