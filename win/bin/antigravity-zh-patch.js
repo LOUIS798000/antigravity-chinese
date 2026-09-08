@@ -908,7 +908,6 @@ const overlaySource = String.raw`
     ["Editor Font", "编辑器字体"],
     ["Zoom Level", "缩放级别"],
     ["Artifacts", "工件"],
-    ["Thinking", "思考中"],
   ]);
 
   function formatDuration(text) {
@@ -1155,7 +1154,6 @@ const overlaySource = String.raw`
     [/Yes, and always allow/g, '是，并始终允许'],
     [/Allow (.+)/g, '允许 $1'],
     [/Refreshes in (\d+) hours?, (\d+) minutes?/g, '$1 小时 $2 分钟后刷新'],
-    [/\((Thinking)\)/g, '(思考)'],
     [/Gemini ([^(]+) \((High|Medium|Low)\)/g, (_match, model, effort) => 'Gemini ' + model.trim() + ' (' + (phrases.get(effort) ?? effort) + ')'],
     [/Antigravity has been redesigned to put agents first with new capabilities\. If you'd still like a code editor, you can download it as a separate app named Antigravity IDE\./g, 'Antigravity 已重新设计为智能体优先，并加入了新能力。如果你仍然需要代码编辑器，可以下载名为 Antigravity IDE 的独立应用。'],
   ];
