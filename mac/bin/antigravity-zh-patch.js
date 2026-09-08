@@ -5,11 +5,11 @@ const { execFileSync, spawn } = require('child_process');
 
 const overlaySource = String.raw`
 (() => {
-  if (window.__antigravityZhPatchInstalled === 44) return;
+  if (window.__antigravityZhPatchInstalled === 52) return;
   if (window.__antigravityZhPatchObserver) {
     try { window.__antigravityZhPatchObserver.disconnect(); } catch {}
   }
-  window.__antigravityZhPatchInstalled = 44;
+  window.__antigravityZhPatchInstalled = 52;
 
   const phrases = new Map([
     ["Your Plan:", "您的订阅计划："],
@@ -901,6 +901,13 @@ const overlaySource = String.raw`
     ['Code Font', '代码字体'],
     ['Editor Font', '编辑器字体'],
     ['Zoom Level', '缩放级别'],
+    ['Overview tab', '概览标签页'],
+    ['Review tab', '审查标签页'],
+    ['Terminal tab', '终端标签页'],
+    ['Overview', '概览'],
+    ['Review', '审查'],
+    ['概述tab', '概览标签页'],
+    ['审查tab', '审查标签页'],
   ]);
 
   function formatDuration(text) {
@@ -1878,6 +1885,11 @@ const overlaySource = String.raw`
       for (const popup of slashPopups) {
         translateNode(popup);
       }
+      // 3. 悬浮提示气泡与浮层 (Tooltip)
+      const tooltips = document.querySelectorAll('[role="tooltip"], .compact-tooltip, .monaco-hover');
+      for (const tt of tooltips) {
+        translateNode(tt);
+      }
     }
 
     // 监听输入、点击、鼠标悬停事件，无缝触发弹出层翻译
@@ -1894,9 +1906,13 @@ const overlaySource = String.raw`
     }, true);
 
     document.addEventListener('mouseover', (e) => {
-      if (e.target && e.target.closest && (e.target.closest('[data-testid="title-menu-bar-item"]') || e.target.closest('[data-testid="title-menu-bar-option"]'))) {
+      if (!e.target || !e.target.closest) return;
+      if (e.target.closest('[data-testid="title-menu-bar-item"]') || e.target.closest('[data-testid="title-menu-bar-option"]')) {
         setTimeout(translateActivePopups, 20);
         setTimeout(translateActivePopups, 80);
+      } else if (e.target.closest('button, [role="button"], [data-tooltip-id], [role="tab"], .action-item')) {
+        setTimeout(translateActivePopups, 30);
+        setTimeout(translateActivePopups, 120);
       }
     }, true);
 

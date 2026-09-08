@@ -3,11 +3,11 @@
 
 const { execFileSync } = require('child_process');
 
-const PATCH_VERSION = 50;
+const PATCH_VERSION = 52;
 
 const overlaySource = String.raw`
 (() => {
-  const CURRENT_PATCH_VERSION = 50;
+  const CURRENT_PATCH_VERSION = 52;
   if (window.__antigravityZhPatchInstalled === CURRENT_PATCH_VERSION) return;
   if (window.__antigravityZhPatchObserver) {
     try { window.__antigravityZhPatchObserver.disconnect(); } catch {}
@@ -908,6 +908,13 @@ const overlaySource = String.raw`
     ["Editor Font", "编辑器字体"],
     ["Zoom Level", "缩放级别"],
     ["Artifacts", "工件"],
+    ["Overview tab", "概览标签页"],
+    ["Review tab", "审查标签页"],
+    ["Terminal tab", "终端标签页"],
+    ["Overview", "概览"],
+    ["Review", "审查"],
+    ["概述tab", "概览标签页"],
+    ["审查tab", "审查标签页"],
   ]);
 
   function formatDuration(text) {
@@ -2329,6 +2336,11 @@ const overlaySource = String.raw`
       for (const popup of slashPopups) {
         translateNode(popup);
       }
+      // 3. 悬浮提示气泡与浮层 (Tooltip)
+      const tooltips = document.querySelectorAll('[role="tooltip"], .compact-tooltip, .monaco-hover');
+      for (const tt of tooltips) {
+        translateNode(tt);
+      }
     });
   }
 
@@ -2392,9 +2404,13 @@ const overlaySource = String.raw`
     }, true);
 
     document.addEventListener('mouseover', (e) => {
-      if (e.target && e.target.closest && (e.target.closest('[data-testid="title-menu-bar-item"]') || e.target.closest('[data-testid="title-menu-bar-option"]'))) {
+      if (!e.target || !e.target.closest) return;
+      if (e.target.closest('[data-testid="title-menu-bar-item"]') || e.target.closest('[data-testid="title-menu-bar-option"]')) {
         setTimeout(translateActivePopups, 20);
         setTimeout(translateActivePopups, 80);
+      } else if (e.target.closest('button, [role="button"], [data-tooltip-id], [role="tab"], .action-item')) {
+        setTimeout(translateActivePopups, 30);
+        setTimeout(translateActivePopups, 120);
       }
     }, true);
 
