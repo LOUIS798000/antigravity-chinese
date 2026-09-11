@@ -3,11 +3,11 @@
 
 const { execFileSync } = require('child_process');
 
-const PATCH_VERSION = 54;
+const PATCH_VERSION = 55;
 
 const overlaySource = String.raw`
 (() => {
-  const CURRENT_PATCH_VERSION = 54;
+  const CURRENT_PATCH_VERSION = 55;
   if (window.__antigravityZhPatchInstalled === CURRENT_PATCH_VERSION) return;
   if (window.__antigravityZhPatchObserver) {
     try { window.__antigravityZhPatchObserver.disconnect(); } catch {}
@@ -15,6 +15,25 @@ const overlaySource = String.raw`
   if (window.__antigravityPopupInterval) clearInterval(window.__antigravityPopupInterval);
   if (window.__antigravityTitleInterval) clearInterval(window.__antigravityTitleInterval);
   window.__antigravityZhPatchInstalled = CURRENT_PATCH_VERSION;
+
+  // 核心防护：拦截外部 DOM 变动导致的 React 协调致命崩溃 (Failed to execute 'removeChild' on 'Node')，杜绝白屏卡死
+  if (typeof Node === 'function' && Node.prototype && !window.__antigravityReactCrashGuardInstalled) {
+    window.__antigravityReactCrashGuardInstalled = true;
+    const origRemoveChild = Node.prototype.removeChild;
+    Node.prototype.removeChild = function (child) {
+      if (child && child.parentNode !== this) {
+        return child;
+      }
+      return origRemoveChild.apply(this, arguments);
+    };
+    const origInsertBefore = Node.prototype.insertBefore;
+    Node.prototype.insertBefore = function (newNode, refNode) {
+      if (refNode && refNode.parentNode !== this) {
+        return newNode;
+      }
+      return origInsertBefore.apply(this, arguments);
+    };
+  }
 
   const phrases = new Map([
     ["Files Changed", "已修改文件"],
@@ -1249,7 +1268,7 @@ const overlaySource = String.raw`
     const element = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
     if (!element) return true;
     return !!element.closest?.(
-      'script, style, code, pre, .xterm, .monaco-editor, .cm-editor, [contenteditable="true"], [data-testid="user-input-step"], [data-testid*="message-content"], .prose, .markdown, [translate="no"], .notranslate'
+      'script, style, code, pre, .xterm, .monaco-editor, .cm-editor, [contenteditable="true"], [data-testid="agent-input-box"], [data-mention-menu], [role="listbox"], [data-testid="user-input-step"], [data-testid*="message-content"], .prose, .markdown, [translate="no"], .notranslate'
     );
   }
 
@@ -2338,34 +2357,70 @@ const overlaySource = String.raw`
     }
   }
 
-  // ===== 弹出层与斜杠命令即时汉化支持 =====
-  const slashOptionLabels = new Map([
-    ['btw', 'btw (快速提问)'],
-    ['goal', 'goal (持续达成目标)'],
-    ['schedule', 'schedule (计划调度)'],
-    ['browser', 'browser (浏览器)'],
-    ['grill-me', 'grill-me (方案访谈)'],
-    ['teamwork-preview', 'teamwork-preview (团队协作)'],
-    ['learn', 'learn (沉淀技能)'],
-    ['boost', 'boost (深度推理)'],
-    ['clear', 'clear (清空上下文)'],
-    ['help', 'help (命令帮助)'],
-    ['list', 'list (技能列表)'],
-    ['compact', 'compact (压缩上下文)'],
-    ['review', 'review (方案审核)'],
-    ['agy-customizations', 'agy-customizations (自定义系统指南)'],
-    ['antigravity-guide', 'antigravity-guide (官方参考手册)'],
-    ['generative_ui', 'generative_ui (交互式组件)'],
-    ['image-gen-api', 'image-gen-api (第三方生图)'],
-    ['migrate-workflows', 'migrate-workflows (迁移工作流)'],
+  // ===== 弹出层与斜杠命令即时汉化支持（基于纯 CSS 伪元素与属性映射，100% 零侵入 React 虚拟 DOM，杜绝白屏与冲突） =====
+  function ensureSlashStyle() {
+    if (document.getElementById('antigravity-zh-slash-style')) return;
+    const style = document.createElement('style');
+    style.id = 'antigravity-zh-slash-style';
+    style.textContent = '[data-testid="menu-option-label"][data-zh-suffix]::after { content: attr(data-zh-suffix); color: var(--muted-foreground, rgba(128, 128, 128, 0.8)); font-size: 11px; font-weight: normal; margin-left: 4px; pointer-events: none; } [data-testid="menu-option-description"][data-zh-desc] { font-size: 0 !important; } [data-testid="menu-option-description"][data-zh-desc]::after { content: attr(data-zh-desc); font-size: 12px !important; line-height: normal; }';
+    (document.head || document.documentElement).appendChild(style);
+  }
+
+  const slashOptionSuffixes = new Map([
+    ['btw', ' (快速提问)'],
+    ['goal', ' (持续达成目标)'],
+    ['schedule', ' (计划调度)'],
+    ['browser', ' (浏览器)'],
+    ['grill-me', ' (方案访谈)'],
+    ['teamwork-preview', ' (团队协作)'],
+    ['learn', ' (沉淀技能)'],
+    ['boost', ' (深度推理)'],
+    ['clear', ' (清空上下文)'],
+    ['help', ' (命令帮助)'],
+    ['list', ' (技能列表)'],
+    ['compact', ' (压缩上下文)'],
+    ['review', ' (方案审核)'],
+    ['agy-customizations', ' (自定义系统指南)'],
+    ['antigravity-guide', ' (官方参考手册)'],
+    ['generative_ui', ' (交互式组件)'],
+    ['image-gen-api', ' (第三方生图)'],
+    ['migrate-workflows', ' (迁移工作流)'],
+  ]);
+
+  const slashOptionDescriptions = new Map([
+    ['Quick question without interrupting the main conversation flow.', '快速提问，不打断主对话流程。'],
+    ['Run continuously until the specified goal is fully achieved.', '持续运行直到指定目标彻底完成。'],
+    ['Run an instruction on a schedule or set a timer.', '按周期性计划运行指令或设置为一次性定时器。'],
+    ['Use browser to perform tasks on the web.', '调用浏览器智能体执行网页自动化任务。'],
+    ['Grill me about an idea or plan.', '对我进行方案交互式访谈，以对齐需求与设计。'],
+    ['Run an autonomous team of agents to solve complex problems.', '调用多智能体团队自主协作处理复杂项目。'],
+    ['Review recent successes or corrections to persist as a skill.', '沉淀近期成功经验或修正内容为可复用技能。'],
+    ['Run the Boost multi-agent harness for deep thinking.', '为复杂任务调用 Boost 多智能体编排器进行深度推理。'],
+    ['Clear chat history.', '清空对话历史。'],
+    ['Show help information.', '显示命令帮助信息。'],
   ]);
 
   function translateSlashOptionLabels() {
-    const labels = document.querySelectorAll('[data-testid="menu-option-label"] span');
-    for (const span of labels) {
-      const raw = (span.textContent || '').trim();
-      if (slashOptionLabels.has(raw)) {
-        span.textContent = slashOptionLabels.get(raw);
+    ensureSlashStyle();
+    const labelEls = document.querySelectorAll('[data-testid="menu-option-label"]');
+    for (const el of labelEls) {
+      const raw = (el.textContent || '').trim();
+      if (slashOptionSuffixes.has(raw)) {
+        const suffix = slashOptionSuffixes.get(raw);
+        if (el.getAttribute('data-zh-suffix') !== suffix) {
+          el.setAttribute('data-zh-suffix', suffix);
+        }
+      }
+    }
+
+    const descEls = document.querySelectorAll('[data-testid="menu-option-description"]');
+    for (const el of descEls) {
+      const raw = (el.textContent || '').trim();
+      if (slashOptionDescriptions.has(raw)) {
+        const desc = slashOptionDescriptions.get(raw);
+        if (el.getAttribute('data-zh-desc') !== desc) {
+          el.setAttribute('data-zh-desc', desc);
+        }
       }
     }
   }
@@ -2378,12 +2433,7 @@ const overlaySource = String.raw`
       for (const opt of menuOptions) {
         translateNode(opt);
       }
-      // 2. 斜杠命令自动补全下拉框
-      const slashPopups = document.querySelectorAll('.max-h-\\[200px\\], [role="listbox"], [data-testid="agent-input-box"] div[class*="overflow-y-auto"]');
-      for (const popup of slashPopups) {
-        translateNode(popup);
-      }
-      // 3. 悬浮提示气泡与浮层 (Tooltip)
+      // 2. 悬浮提示气泡与浮层 (Tooltip)
       const tooltips = document.querySelectorAll('[role="tooltip"], .compact-tooltip, .monaco-hover');
       for (const tt of tooltips) {
         translateNode(tt);
@@ -2439,10 +2489,11 @@ const overlaySource = String.raw`
       attributeFilter: ['aria-label', 'title', 'placeholder', 'alt'],
     });
 
-    // 监听输入与点击事件，即刻触发下拉菜单与斜杠命令的快速汉化
+    // 防抖监听输入与交互，安全触发弹出层翻译
+    let inputDebounce = null;
     document.addEventListener('input', () => {
-      setTimeout(translateActivePopups, 30);
-      setTimeout(translateActivePopups, 150);
+      if (inputDebounce) clearTimeout(inputDebounce);
+      inputDebounce = setTimeout(translateActivePopups, 50);
     }, true);
 
     document.addEventListener('click', () => {
