@@ -29,10 +29,12 @@ try {
     }
 } catch {}
 
-# 4. 停止后台运行的守护进程与 node 汉化进程
+# 4. 停止后台运行的守护进程与 node 汉化进程（仅限 node/wscript/cscript，避免误杀当前终端会话）
 try {
     Get-CimInstance Win32_Process | Where-Object { 
-        $_.CommandLine -like "*antigravity-zh-patch.js*" -or $_.CommandLine -like "*start-silent.vbs*" 
+        $_.Name -match "^(node|wscript|cscript)(\.exe)?$" -and (
+            $_.CommandLine -like "*antigravity-zh-patch.js*" -or $_.CommandLine -like "*start-silent.vbs*"
+        )
     } | ForEach-Object {
         Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
     }

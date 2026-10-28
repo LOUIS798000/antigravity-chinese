@@ -21,10 +21,12 @@ Write-Host "已识别并配置 Node.js 路径: $nodeExePath" -ForegroundColor Gr
 
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 
-# 2. 停止并清理已有后台旧进程（兼容 PowerShell 5.1 与 7+）
+# 2. 停止并清理已有后台旧进程（仅限 node/wscript/cscript，避免误杀当前终端会话）
 try {
     Get-CimInstance Win32_Process | Where-Object { 
-        $_.CommandLine -like "*antigravity-zh-patch.js*" -or $_.CommandLine -like "*start-silent.vbs*" 
+        $_.Name -match "^(node|wscript|cscript)(\.exe)?$" -and (
+            $_.CommandLine -like "*antigravity-zh-patch.js*" -or $_.CommandLine -like "*start-silent.vbs*"
+        )
     } | ForEach-Object {
         Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
     }
