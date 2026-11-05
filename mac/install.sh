@@ -8,7 +8,7 @@ DEST_PLIST="$HOME/Library/LaunchAgents/$PLIST_NAME"
 NODE_BIN="$(command -v node || true)"
 
 if [[ -z "$NODE_BIN" ]]; then
-  echo "未找到 Node.js。请先安装 Node.js 22 或更高版本，然后重新运行 install.sh。"
+  echo "未找到 Node.js。请先安装 Node.js 18 或更高版本，然后重新运行 install.sh。"
   exit 1
 fi
 

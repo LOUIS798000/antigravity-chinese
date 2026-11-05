@@ -41,8 +41,8 @@ If nodeExe = "" Then
     nodeExe = "node.exe"
 End If
 
-' 4. Daemon loop with 3-second cooldown on unexpected exit
+' 4. Daemon loop with 3-second cooldown on unexpected exit (capped V8 heap for minimal RAM footprint)
 Do
-    exitCode = WshShell.Run("""" & nodeExe & """ """ & nodeScript & """ --watch", 0, True)
+    exitCode = WshShell.Run("""" & nodeExe & """ --max-old-space-size=48 """ & nodeScript & """ --watch", 0, True)
     WScript.Sleep 3000
 Loop

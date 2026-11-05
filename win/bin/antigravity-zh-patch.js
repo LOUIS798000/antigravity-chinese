@@ -4,19 +4,53 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const http = require('http');
+const crypto = require('crypto');
 const { execFileSync } = require('child_process');
 
-const PATCH_VERSION = 61;
+const PATCH_VERSION = 67;
+const INITIAL_SCRIPT_MTIME = (() => {
+  try {
+    return fs.statSync(__filename).mtimeMs;
+  } catch {
+    return 0;
+  }
+})();
 
 const overlaySource = String.raw`
 (() => {
-  const CURRENT_PATCH_VERSION = 61;
+  // 排除内置浏览器中打开的外部公网网页，避免对第三方网站注入 DOM 监听与词典占用内存
+  try {
+    const proto = location.protocol;
+    const host = location.hostname;
+    if (
+      (proto === 'http:' || proto === 'https:') &&
+      host !== '127.0.0.1' &&
+      host !== 'localhost' &&
+      host !== '[::1]'
+    ) {
+      return;
+    }
+  } catch {}
+
+  const CURRENT_PATCH_VERSION = 67;
   if (window.__antigravityZhPatchInstalled === CURRENT_PATCH_VERSION) return;
+  if (typeof window.__antigravityCleanup === 'function') {
+    try { window.__antigravityCleanup(); } catch {}
+  }
   if (window.__antigravityZhPatchObserver) {
     try { window.__antigravityZhPatchObserver.disconnect(); } catch {}
   }
+  if (Array.isArray(window.__antigravityZhPatchObservers)) {
+    for (const obs of window.__antigravityZhPatchObservers) {
+      try { obs.disconnect(); } catch {}
+    }
+  }
+  window.__antigravityZhPatchObservers = [];
   if (window.__antigravityPopupInterval) clearInterval(window.__antigravityPopupInterval);
   if (window.__antigravityTitleInterval) clearInterval(window.__antigravityTitleInterval);
+  window.__antigravityPopupInterval = null;
+  window.__antigravityTitleInterval = null;
   window.__antigravityZhPatchInstalled = CURRENT_PATCH_VERSION;
 
   // 核心防护：拦截外部 DOM 变动导致的 React 协调异常 (Failed to execute 'removeChild' on 'Node')，杜绝白屏卡死
@@ -196,10 +230,18 @@ const overlaySource = String.raw`
     ["Accent", "强调色"],
 
     // 选项值与级别单字
-    ["High", "高"],
-    ["Medium", "中等"],
+    ["Minimal", "极低"],
     ["Low", "低"],
+    ["Medium", "中等"],
+    ["High", "高"],
+    ["Max", "最高"],
+    ["Fast", "快速"],
+    ["Balanced", "均衡"],
+    ["Reasoning", "深度推理"],
+    ["Effort", "推理强度"],
     ["Local", "本地"],
+    ["Remote", "远程"],
+    ["Cloud", "云端"],
     ["None", "无"],
     ["Status", "状态"],
     ["Custom", "自定义"],
@@ -212,11 +254,452 @@ const overlaySource = String.raw`
     ["Auto", "自动"],
     ["Auto (Preview)", "自动（预览）"],
     ["Turbo", "极速 (Turbo)"],
+    ["Preview", "预览"],
+    ["Experimental", "实验性"],
+    ["Beta", "测试版"],
+    ["Deprecated", "已弃用"],
+
+    // v2.29 主页、侧边栏日期分组与基础导航单字
+    ["Home", "主页"],
+    ["Inbox", "收件箱"],
+    ["Activity", "活动"],
+    ["Updates", "更新"],
+    ["Changelog", "更新日志"],
+    ["Documentation", "文档"],
+    ["Docs", "文档"],
+    ["Community", "社区"],
+    ["Support", "支持"],
+    ["About", "关于"],
+    ["Today", "今天"],
+    ["Yesterday", "昨天"],
+    ["Older", "更早"],
+    ["Recent", "最近"],
+    ["All", "全部"],
+    ["Active", "活跃"],
+    ["Inactive", "未激活"],
+    ["Unread", "未读"],
+    ["Starred", "已加星标"],
+    ["Favorites", "收藏"],
+
+    // v2.28-v2.29 插件市场、账户与生命周期单字
+    ["Installed", "已安装"],
+    ["Featured", "精选"],
+    ["Official", "官方"],
+    ["Partner", "合作伙伴"],
+    ["Partners", "合作伙伴"],
+    ["Popular", "热门"],
+    ["Trending", "趋势"],
+    ["Categories", "分类"],
+    ["Category", "分类"],
+    ["Accounts", "账户"],
+    ["Install", "安装"],
+    ["Installing...", "正在安装..."],
+    ["Installing", "正在安装"],
+    ["Uninstall", "卸载"],
+    ["Uninstalling...", "正在卸载..."],
+    ["Enable", "启用"],
+    ["Disable", "禁用"],
+    ["Update", "更新"],
+    ["Updating...", "正在更新..."],
+    ["Updated", "已更新"],
+    ["Configure", "配置"],
+    ["Manage", "管理"],
+    ["Connect", "连接"],
+    ["Connected", "已连接"],
+    ["Connecting...", "正在连接..."],
+    ["Connecting", "正在连接"],
+    ["Disconnect", "断开连接"],
+    ["Disconnected", "已断开"],
+    ["Reconnect", "重新连接"],
+    ["Authorize", "授权"],
+    ["Authorized", "已授权"],
+    ["Business", "商业与数据"],
+    ["Personal", "个人"],
+    ["Work", "工作"],
+    ["Hooks", "钩子"],
+    ["Hook", "钩子"],
+    ["Agents", "智能体"],
+    ["Agent", "智能体"],
+    ["Sidecar", "扩展面板"],
+    ["Sidecars", "扩展面板"],
+
+    // v2.29 自动化与计划调度单字
+    ["Schedule", "计划调度"],
+    ["Scheduled", "已计划"],
+    ["Schedules", "计划列表"],
+    ["Cadence", "执行周期"],
+    ["Frequency", "执行频率"],
+    ["Timezone", "时区"],
+    ["Prompt", "提示词"],
+    ["Prompts", "提示词"],
+    ["History", "历史记录"],
+    ["Logs", "日志"],
+    ["Output", "输出"],
+    ["Outputs", "输出"],
+    ["Result", "结果"],
+    ["Results", "结果"],
+    ["Hourly", "每小时"],
+    ["Daily", "每天"],
+    ["Weekly", "每周"],
+    ["Monthly", "每月"],
+    ["Weekdays", "工作日"],
+    ["Weekends", "周末"],
+    ["Once", "单次"],
+    ["Manual", "手动"],
+    ["Paused", "已暂停"],
+    ["Pause", "暂停"],
+    ["Resume", "恢复"],
+    ["Stop", "停止"],
+    ["Stopped", "已停止"],
+    ["Start", "启动"],
+    ["Restart", "重启"],
+    ["Completed", "已完成"],
+    ["Succeeded", "已成功"],
+    ["Success", "成功"],
+    ["Failed", "失败"],
+    ["Error", "错误"],
+    ["Errors", "错误"],
+    ["Warning", "警告"],
+    ["Warnings", "警告"],
+    ["Pending", "等待中"],
+    ["Queued", "排队中"],
+    ["Cancelled", "已取消"],
+    ["Canceled", "已取消"],
+    ["Skipped", "已跳过"],
+    ["Timeout", "超时"],
+    ["Monday", "星期一"],
+    ["Tuesday", "星期二"],
+    ["Wednesday", "星期三"],
+    ["Thursday", "星期四"],
+    ["Friday", "星期五"],
+    ["Saturday", "星期六"],
+    ["Sunday", "星期日"],
+    ["Mon", "周一"],
+    ["Tue", "周二"],
+    ["Wed", "周三"],
+    ["Thu", "周四"],
+    ["Fri", "周五"],
+    ["Sat", "周六"],
+    ["Sun", "周日"],
+
+    // v2.29 实时语音模式 (Voice Mode / Gemini Live) 单字
+    ["Voice", "语音"],
+    ["Live", "实时语音"],
+    ["Listening...", "正在聆听..."],
+    ["Listening", "正在聆听"],
+    ["Speaking...", "正在说话..."],
+    ["Speaking", "正在说话"],
+    ["Processing...", "正在处理..."],
+    ["Initializing...", "正在初始化..."],
+    ["Mute", "静音"],
+    ["Muted", "已静音"],
+    ["Unmute", "取消静音"],
+    ["Microphone", "麦克风"],
+    ["Speaker", "扬声器"],
+    ["Audio", "音频"],
+    ["Transcript", "文字记录"],
+    ["Captions", "实时字幕"],
+    ["Interrupt", "打断"],
+
+    // v2.29 远程环境、编辑器、审查、Notebook、浏览器与设备中心单字
+    ["Repository", "代码仓库"],
+    ["Repositories", "代码仓库"],
+    ["Branch", "分支"],
+    ["Branches", "分支"],
+    ["Secrets", "密钥"],
+    ["Secret", "密钥"],
+    ["Variables", "变量"],
+    ["Container", "容器"],
+    ["Sandbox", "沙盒"],
+    ["Online", "在线"],
+    ["Offline", "离线"],
+    ["Provisioning...", "正在分配环境..."],
+    ["Provisioning", "正在分配环境"],
+    ["Starting...", "正在启动..."],
+    ["Stopping...", "正在停止..."],
+    ["Sleeping", "休眠中"],
+    ["Ready", "就绪"],
+    ["Diff", "差异对比"],
+    ["Changes", "更改"],
+    ["Changed", "已更改"],
+    ["Added", "新增"],
+    ["Modified", "已修改"],
+    ["Removed", "已移除"],
+    ["Renamed", "已重命名"],
+    ["Untracked", "未跟踪"],
+    ["Staged", "已暂存"],
+    ["Unstaged", "未暂存"],
+    ["Accept", "接受"],
+    ["Reject", "拒绝"],
+    ["Discard", "放弃"],
+    ["Revert", "还原"],
+    ["Approve", "批准"],
+    ["Approved", "已批准"],
+    ["Proceed", "继续执行"],
+    ["Continue", "继续"],
+    ["Done", "完成"],
+    ["Finish", "完成"],
+    ["Next", "下一步"],
+    ["Previous", "上一步"],
+    ["Apply", "应用"],
+    ["Clear", "清除"],
+    ["Filter", "筛选"],
+    ["Filters", "筛选"],
+    ["Sort", "排序"],
+    ["Share", "分享"],
+    ["Shared", "已分享"],
+    ["Send", "发送"],
+    ["Attach", "添加附件"],
+    ["Upload", "上传"],
+    ["Download", "下载"],
+    ["Downloads", "下载内容"],
+    ["Bookmarks", "书签"],
+    ["Reload", "重新加载"],
+    ["Inspect", "检查"],
+    ["Console", "控制台"],
+    ["Network", "网络"],
+    ["Notebook", "笔记本"],
+    ["Kernel", "内核"],
+    ["Cell", "单元格"],
+    ["Cells", "单元格"],
+    ["Split", "拆分"],
+    ["Unified", "统一视图"],
+    ["Inline", "内联"],
+    ["Side-by-side", "并排对比"],
+    ["Details", "详情"],
+    ["Summary", "摘要"],
+    ["Name", "名称"],
+    ["Type", "类型"],
+    ["Size", "大小"],
+    ["Path", "路径"],
+    ["Scope", "作用域"],
+    ["Global", "全局"],
+    ["Inherited", "继承"],
+    ["Override", "覆盖"],
+    ["Optional", "可选"],
+    ["Required", "必填"],
+    ["Devices", "设备"],
+    ["Device", "设备"],
+    ["Emulators", "模拟器"],
+    ["Emulator", "模拟器"],
+    ["Physical", "真机"],
+    ["Virtual", "虚拟设备"],
+    ["Mirror", "屏幕镜像"],
+    ["Mirroring", "正在镜像"],
+    ["Screenshot", "屏幕截图"],
+    ["Rotate", "旋转"],
+    ["Portrait", "竖屏"],
+    ["Landscape", "横屏"],
+    ["Render", "渲染"],
+    ["Rendering...", "正在渲染..."],
+    ["Rendered", "已渲染"],
+    ["Undo", "撤销"],
+    ["Redo", "重做"],
+    ["Cut", "剪切"],
+    ["Paste", "粘贴"],
+    ["Find", "查找"],
+    ["Replace", "替换"],
+    ["Exit", "退出"],
+    ["Preferences", "偏好设置"],
+    ["Services", "服务"],
+    ["Hide", "隐藏"],
+    ["Show", "显示"],
+    ["Tools", "工具"],
+
+    // v2.29.0 分段开关、按钮动作、快捷键与状态单字补齐
+    ["Light", "浅色"],
+    ["Dark", "深色"],
+    ["Change...", "更改..."],
+    ["Change…", "更改…"],
+    ["Change", "更改"],
+    ["Browse...", "浏览..."],
+    ["Browse…", "浏览…"],
+    ["Browse", "浏览"],
+    ["Choose...", "选择..."],
+    ["Choose…", "选择…"],
+    ["Choose", "选择"],
+    ["Select...", "选择..."],
+    ["Edit...", "编辑..."],
+    ["Quote", "引用"],
+    ["Block", "阻止"],
+    ["Blocked", "已阻止"],
+    ["Ask", "询问"],
+    ["Always", "始终"],
+    ["Never", "从不"],
+    ["On", "开启"],
+    ["Off", "关闭"],
+    ["Memory", "记忆"],
+    ["Memories", "记忆"],
+    ["Knowledge", "知识库"],
+    ["Demoted", "已降级"],
+    ["Excluded", "已排除"],
+    ["Truncated", "已截断"],
+    ["Available", "可用"],
+    ["Total", "总计"],
+    ["Used", "已使用"],
+    ["Remaining", "剩余"],
+    ["Unlimited", "无限制"],
+    ["Free", "免费版"],
+    ["Pro", "专业版"],
+    ["Ultra", "旗舰版"],
+    ["Enterprise", "企业版"],
+    ["Team", "团队版"],
+    ["Stable", "稳定版"],
+    ["Nightly", "每夜版"],
+    ["Canary", "金丝雀版"],
+    ["Copied!", "已复制！"],
+    ["Speakers", "扬声器"],
+    ["Headphones", "耳机"],
+    ["Input", "输入"],
+    ["Volume", "音量"],
+    ["Speed", "语速"],
+    ["Pitch", "音调"],
+    ["Waveform", "波形"],
+    ["Editor", "编辑器"],
+    ["Pane", "窗格"],
+    ["Panes", "窗格"],
+    ["Panel", "面板"],
+    ["Panels", "面板"],
+    ["Toolbar", "工具栏"],
+    ["Statusbar", "状态栏"],
+    ["Header", "顶部栏"],
+    ["Footer", "底部栏"],
+    ["Modal", "弹窗"],
+    ["Zen", "禅模式"],
+    ["Fullscreen", "全屏"],
+    [", or", "，或"],
+    [", and", "，以及"],
+
+    // v65 地板式全量单复数与面板控件单字补齐
+    ["Files", "文件"],
+    ["Folder", "文件夹"],
+    ["Extension", "扩展"],
+    ["Extensions", "扩展"],
+    ["Raw", "原始文本"],
+    ["Outline", "大纲"],
+    ["Blame", "Git 追溯"],
+    ["Document", "文档"],
+    ["Documents", "文档"],
+    ["Artifact", "产物"],
+    ["Subagent", "子智能体"],
+    ["Source", "参考来源"],
+    ["Task", "任务"],
+    ["Tasks", "任务"],
+    ["Tabs", "标签页"],
+    ["Windows", "窗口"],
+    ["Permission", "权限"],
+    ["Grant", "授权"],
+    ["Grants", "授权"],
+    ["Shortcut", "快捷键"],
+    ["Notification", "通知"],
+    ["Sounds", "声音"],
+    ["Font", "字体"],
+    ["Fonts", "字体"],
+    ["Icon", "图标"],
+    ["Icons", "图标"],
+    ["Badge", "徽章"],
+    ["Badges", "徽章"],
+    ["Comment", "评论"],
+    ["Comments", "评论"],
+    ["Attachment", "附件"],
+    ["Attachments", "附件"],
+    ["Page", "页面"],
+    ["Pages", "页面"],
+    ["Image", "图片"],
+    ["Images", "图片"],
+    ["Video", "视频"],
+    ["Videos", "视频"],
+    ["Link", "链接"],
+    ["Links", "链接"],
+    ["Domain", "域名"],
+    ["Domains", "域名"],
+    ["Host", "主机"],
+    ["Hosts", "主机"],
+    ["Server", "服务器"],
+    ["Servers", "服务器"],
+    ["Provider", "服务商"],
+    ["Providers", "服务商"],
+    ["Profile", "配置资料"],
+    ["Profiles", "配置资料"],
+    ["Session", "会话"],
+    ["Sessions", "会话"],
+    ["Job", "作业"],
+    ["Jobs", "作业"],
+    ["Runs", "运行记录"],
+    ["Step", "步骤"],
+    ["Steps", "步骤"],
+    ["Turn", "轮次"],
+    ["Turns", "轮次"],
+    ["Credit", "积分"],
+    ["Credits", "积分"],
+    ["Limit", "限额"],
+    ["Limits", "限额"],
+    ["Rule", "规则"],
+    ["Policy", "策略"],
+    ["Policies", "策略"],
+    ["List", "列表"],
+    ["Lists", "列表"],
+    ["Allowlist", "允许列表"],
+    ["Denylist", "拒绝列表"],
+    ["Accessibility", "无障碍"],
+    ["Precedence", "优先级"],
+    ["Print", "打印"],
+    ["Print...", "打印..."],
+    ["Stage", "暂存"],
+    ["Unstage", "取消暂存"],
+    ["Supervised", "受控模式"],
+    ["Cautious", "谨慎模式"],
+    ["Strict", "严格模式"],
+    ["Autonomous", "自主模式"],
+    ["Read-only", "只读"],
+    ["Readonly", "只读"],
+    ["Minimap", "缩略图"],
+    ["Breadcrumbs", "面包屑导航"],
+    ["Duplicate", "创建副本"],
+    ["Fork", "创建分支"],
+    ["Regenerate", "重新生成"],
+    ["Chat", "聊天"],
+    ["Chats", "聊天"],
+    ["Verbose", "详细"],
+    ["Concise", "简洁"],
+    ["Brief", "简略"],
+    ["Detailed", "详细"],
+    ["Contrast", "对比度"],
+    ["Strong", "增强"],
+    ["Normal", "标准"],
+    ["Standard", "标准"],
+    ["Subtle", "柔和"],
+    ["Small", "小"],
+    ["Large", "大"],
+    ["Zoom", "缩放"],
+    ["Layout", "布局"],
+    ["Width", "宽度"],
+    ["Density", "排列密度"],
+    ["Motion", "动态效果"],
+    ["Animations", "动画效果"],
+    ["Telemetry", "遥测"],
+    ["Diagnostics", "诊断"],
+    ["Security", "安全"],
+    ["Privacy", "隐私"],
+    ["Billing", "账单"],
+    ["Subscription", "订阅"],
+    ["Credentials", "凭据"],
+    ["Authentication", "身份认证"],
+    ["Proxy", "代理"],
+    ["Cache", "缓存"],
+    ["Storage", "存储"],
+    ["Trash", "回收站"],
+    ["Clipboard", "剪贴板"],
   ]);
 
   // ===== 第二级：多词安全短语与完整句字典 (均为 2 词以上明确 UI 短语，无单字歧义) =====
   const phrases = new Map([
     // 旧版半截翻译自愈修复（无需重启即可修复已污染节点）
+    ["添加到聊天/Quote", "添加到聊天 / 引用"],
+    ["添加到聊天 / Quote", "添加到聊天 / 引用"],
+    ["Scan the code to open this device in 远程控制, or copy link.", "扫描二维码以在远程控制中打开此设备，或复制链接。"],
+    ["Scan the code to open this device in 远程控制, or", "扫描二维码以打开此设备的远程控制，或"],
+    ["Configure the browser subagent. It requires Chrome 浏览器 to be installed. The browser subagent can be invoked by typing /browser in the conversation input box.", "配置浏览器子智能体。此功能需要安装 Chrome 浏览器后方可使用。在对话输入框中输入 /browser 即可调用浏览器子智能体。"],
     ["已固定 动作", "已固定会话操作"],
     ["Pinned Actions", "已固定会话操作"],
     ["搜索 对话", "搜索对话"],
@@ -1191,6 +1674,1206 @@ const overlaySource = String.raw`
     ["Emoji Picker", "表情选择器"],
     ["Upload Media", "上传媒体"],
     ["Attach Media", "附加媒体"],
+
+    // ===== Antigravity v2.28 - v2.29.0 全新界面全量覆盖 =====
+    // 1. 全新主页 (Home)、欢迎引导与左侧边栏分组
+    ["Welcome back", "欢迎回来"],
+    ["Welcome to Antigravity", "欢迎使用 Antigravity"],
+    ["Good morning", "早上好"],
+    ["Good afternoon", "下午好"],
+    ["Good evening", "晚上好"],
+    ["What would you like to build?", "今天想构建些什么？"],
+    ["What would you like to build today?", "今天想构建些什么？"],
+    ["What can I help you with?", "有什么我可以帮您的？"],
+    ["What can I help you with today?", "今天有什么可以帮您的？"],
+    ["How can I help you today?", "今天有什么可以帮您的？"],
+    ["What are we building today?", "今天我们要构建什么？"],
+    ["Start a conversation", "开始新对话"],
+    ["Start a new conversation", "开始新对话"],
+    ["Ask anything...", "尽管提问..."],
+    ["Ask Antigravity anything...", "向 Antigravity 提问..."],
+    ["Ask anything, @ to mention, / for commands", "想问什么都可以，@ 引用上下文，/ 执行快捷命令"],
+    ["Message Antigravity...", "给 Antigravity 发送消息..."],
+    ["Reply to agent...", "回复智能体..."],
+    ["Send a message...", "发送消息..."],
+    ["Follow up...", "继续追问..."],
+    ["Ask a follow-up...", "继续追问..."],
+    ["Ask a follow-up question...", "继续追问..."],
+    ["Previous 7 Days", "过去 7 天"],
+    ["Previous 30 Days", "过去 30 天"],
+    ["Last 7 Days", "最近 7 天"],
+    ["Last 30 Days", "最近 30 天"],
+    ["Last 90 Days", "最近 90 天"],
+    ["This Week", "本周"],
+    ["Last Week", "上周"],
+    ["This Month", "本月"],
+    ["Last Month", "上月"],
+    ["Earlier This Month", "本月早些时候"],
+    ["Archived Conversations", "已归档对话"],
+    ["View Archived", "查看已归档"],
+    ["Show Archived", "显示已归档"],
+    ["Hide Archived", "隐藏已归档"],
+    ["No archived conversations", "暂无已归档的对话"],
+    ["Unarchive Conversation", "取消归档对话"],
+    ["Unarchive conversation", "取消归档对话"],
+    ["Open Home", "打开主页"],
+    ["Go to Home", "返回主页"],
+    ["Back to Home", "返回主页"],
+    ["Quick Actions", "快捷操作"],
+    ["Suggested Actions", "推荐操作"],
+    ["Get Started", "快速上手"],
+    ["Getting Started", "快速入门"],
+    ["Recent Activity", "最近活动"],
+    ["Active Agents", "活跃智能体"],
+    ["Running Agents", "运行中的智能体"],
+    ["Clone Repository", "克隆代码仓库"],
+    ["Clone a Repository", "克隆代码仓库"],
+    ["Open Existing Folder", "打开现有文件夹"],
+    ["Open Local Folder", "打开本地文件夹"],
+    ["Sign out", "退出登录"],
+    ["Sign in", "登录"],
+    ["Log in", "登录"],
+    ["Log out", "退出登录"],
+
+    // 2. 顶部原生/自定义菜单栏全项补齐 (File / Edit / Selection / View / Go / Window / Help)
+    ["New Window", "新建窗口"],
+    ["New Chat", "新建聊天"],
+    ["Open Recent", "打开最近使用"],
+    ["Clear Recently Opened", "清除最近打开记录"],
+    ["Save All", "全部保存"],
+    ["Save As...", "另存为..."],
+    ["Save As", "另存为"],
+    ["Auto Save", "自动保存"],
+    ["Quit Antigravity", "退出 Antigravity"],
+    ["About Antigravity", "关于 Antigravity"],
+    ["Hide Antigravity", "隐藏 Antigravity"],
+    ["Hide Others", "隐藏其他"],
+    ["Show All", "全部显示"],
+    ["Find in Files", "在文件中查找"],
+    ["Replace in Files", "在文件中替换"],
+    ["Toggle Line Comment", "切换行注释"],
+    ["Toggle Block Comment", "切换块注释"],
+    ["Select All", "全选"],
+    ["Expand Selection", "扩大选区"],
+    ["Shrink Selection", "缩小选区"],
+    ["Copy Line Up", "向上复制一行"],
+    ["Copy Line Down", "向下复制一行"],
+    ["Move Line Up", "向上移动一行"],
+    ["Move Line Down", "向下移动一行"],
+    ["Toggle Full Screen", "切换全屏"],
+    ["Full Screen", "全屏"],
+    ["Actual Size", "实际大小"],
+    ["Toggle Developer Tools", "切换开发者工具"],
+    ["Reload Window", "重新加载窗口"],
+    ["Force Reload", "强制重新加载"],
+    ["Minimize Window", "最小化窗口"],
+    ["Bring All to Front", "前置全部窗口"],
+    ["Release Notes", "发行说明"],
+    ["What's New", "新功能介绍"],
+    ["Report Issue", "报告问题"],
+    ["Report a Problem", "报告问题"],
+    ["Privacy Policy", "隐私政策"],
+    ["View License", "查看许可证"],
+    ["Restart to Update", "重启以完成更新"],
+    ["Check for Updates...", "检查更新..."],
+
+    // 3. 实时语音对话模式 (Voice Mode / Gemini Live)
+    ["Voice Mode", "语音模式"],
+    ["Start Voice Mode", "开启语音模式"],
+    ["Enter Voice Mode", "进入语音模式"],
+    ["End Voice Mode", "结束语音模式"],
+    ["Exit Voice Mode", "退出语音模式"],
+    ["Stop Voice Mode", "停止语音模式"],
+    ["Close Voice Mode", "关闭语音模式"],
+    ["Voice Conversation", "语音对话"],
+    ["Start Voice Conversation", "开始语音对话"],
+    ["End Call", "结束通话"],
+    ["Gemini Live", "Gemini 实时语音"],
+    ["Live Voice", "实时语音"],
+    ["Mute Microphone", "麦克风静音"],
+    ["Unmute Microphone", "取消麦克风静音"],
+    ["Mute microphone", "麦克风静音"],
+    ["Unmute microphone", "取消麦克风静音"],
+    ["Microphone muted", "麦克风已静音"],
+    ["Microphone is muted", "麦克风处于静音状态"],
+    ["Connecting to voice...", "正在连接语音服务..."],
+    ["Connecting to Gemini Live...", "正在连接 Gemini 实时语音..."],
+    ["Voice Settings", "语音设置"],
+    ["Audio Settings", "音频设置"],
+    ["Input Device", "输入设备"],
+    ["Output Device", "输出设备"],
+    ["Microphone Device", "麦克风设备"],
+    ["Speaker Device", "扬声器设备"],
+    ["System Default", "系统默认"],
+    ["Default Microphone", "默认麦克风"],
+    ["Default Speaker", "默认扬声器"],
+    ["Voice Selection", "音色选择"],
+    ["Select Voice", "选择音色"],
+    ["Test Microphone", "测试麦克风"],
+    ["Test Audio", "测试音频"],
+    ["Push to Talk", "按住说话"],
+    ["Push-to-Talk", "按住说话"],
+    ["Hold to talk", "按住说话"],
+    ["Release to send", "松开发送"],
+    ["Hands-free", "免提模式"],
+    ["Hands-Free", "免提模式"],
+    ["Voice Activity Detection", "语音活动检测"],
+    ["Tap to interrupt", "点击可随时打断"],
+    ["Speak to interrupt", "直接说话即可打断"],
+    ["Click to speak", "点击开始说话"],
+    ["Show Transcript", "显示文字记录"],
+    ["Hide Transcript", "隐藏文字记录"],
+    ["Show Captions", "显示实时字幕"],
+    ["Hide Captions", "隐藏实时字幕"],
+    ["Microphone Access Required", "需要麦克风权限"],
+    ["Microphone permission denied", "麦克风权限已被拒绝"],
+    ["Allow Antigravity to access your microphone", "允许 Antigravity 访问您的麦克风"],
+    ["Please grant microphone access in System Settings.", "请在系统设置中授予麦克风访问权限。"],
+
+    // 4. 远程智能体 (Remote Agents)、云端环境与 WSL 连接
+    ["Remote Agents", "远程智能体"],
+    ["Remote Agent", "远程智能体"],
+    ["Cloud Agents", "云端智能体"],
+    ["Cloud Agent", "云端智能体"],
+    ["Local Agent", "本地智能体"],
+    ["Local Agents", "本地智能体"],
+    ["Run Locally", "在本地运行"],
+    ["Run in Cloud", "在云端运行"],
+    ["Run Remotely", "远程运行"],
+    ["Local Environment", "本地环境"],
+    ["Remote Environment", "远程环境"],
+    ["Cloud Environment", "云端环境"],
+    ["Remote Projects", "远程项目"],
+    ["Remote Project", "远程项目"],
+    ["Create Remote Project", "创建远程项目"],
+    ["Connect to Remote", "连接到远程环境"],
+    ["Connect to Host", "连接到远程主机"],
+    ["Disconnect from Remote", "断开远程连接"],
+    ["Connect to WSL", "连接到 WSL"],
+    ["Connect to WSL...", "连接到 WSL..."],
+    ["Connect to WSL Distro", "连接到 WSL 发行版"],
+    ["New WSL Window", "新建 WSL 窗口"],
+    ["New WSL Window using Distro...", "使用指定发行版新建 WSL 窗口..."],
+    ["Open Folder in WSL", "在 WSL 中打开文件夹"],
+    ["Open Folder in WSL...", "在 WSL 中打开文件夹..."],
+    ["Reopen Folder in WSL", "在 WSL 中重新打开文件夹"],
+    ["Reopen Folder Locally", "在本地重新打开文件夹"],
+    ["Close Remote Connection", "关闭远程连接"],
+    ["Connect via SSH", "通过 SSH 连接"],
+    ["Connect to SSH Host...", "连接到 SSH 主机..."],
+    ["Select Repository", "选择代码仓库"],
+    ["Select Branch", "选择分支"],
+    ["Git Repository", "Git 代码仓库"],
+    ["Repository URL", "仓库地址 URL"],
+    ["Setup Script", "初始化脚本"],
+    ["Startup Script", "启动脚本"],
+    ["Environment Variables", "环境变量"],
+    ["Add Environment Variable", "添加环境变量"],
+    ["Add Secret", "添加密钥"],
+    ["Provisioning environment...", "正在分配云端环境..."],
+    ["Starting remote environment...", "正在启动远程环境..."],
+    ["Waking up environment...", "正在唤醒远程环境..."],
+    ["Environment Ready", "环境已就绪"],
+    ["Environment Stopped", "环境已停止"],
+    ["Stop Environment", "停止环境"],
+    ["Restart Environment", "重启环境"],
+    ["Rebuild Environment", "重建环境"],
+    ["Remote Control Settings", "远程控制设置"],
+    ["Companion Website", "配套网页端"],
+    ["Open Companion Website", "打开配套网页端"],
+    ["Connected Devices", "已连接设备"],
+    ["Pair Device", "配对设备"],
+
+    // 5. 全新自动化面板 (Automations Dashboard) 与定时调度
+    ["New Automation", "新建自动化"],
+    ["Create Automation", "创建自动化"],
+    ["Edit Automation", "编辑自动化"],
+    ["Delete Automation", "删除自动化"],
+    ["Duplicate Automation", "复制自动化"],
+    ["Pause Automation", "暂停自动化"],
+    ["Resume Automation", "恢复自动化"],
+    ["Enable Automation", "启用自动化"],
+    ["Disable Automation", "禁用自动化"],
+    ["Run Now", "立即运行"],
+    ["Run now", "立即运行"],
+    ["Test Run", "测试运行"],
+    ["Trigger Now", "立即触发"],
+    ["Automation Name", "自动化名称"],
+    ["Enter automation name...", "输入自动化名称..."],
+    ["Task Prompt", "任务提示词"],
+    ["Automation Prompt", "自动化提示词"],
+    ["Instructions for the agent...", "输入给智能体的执行指令..."],
+    ["Describe what the agent should do...", "描述您希望智能体自动执行的任务..."],
+    ["Next Run", "下次运行"],
+    ["Next run", "下次运行"],
+    ["Last Run", "上次运行"],
+    ["Last run", "上次运行"],
+    ["Never run", "从未运行"],
+    ["Run History", "运行历史"],
+    ["Execution History", "执行历史"],
+    ["Recent Runs", "最近运行记录"],
+    ["No runs yet", "暂无运行记录"],
+    ["No run history", "暂无运行历史"],
+    ["View Run", "查看运行详情"],
+    ["Open Run Conversation", "打开运行对话"],
+    ["View Conversation", "查看对话"],
+    ["Every Hour", "每小时"],
+    ["Every Day", "每天"],
+    ["Every Week", "每周"],
+    ["Every Month", "每月"],
+    ["Weekdays (Mon-Fri)", "工作日（周一至周五）"],
+    ["Weekdays (Mon–Fri)", "工作日（周一至周五）"],
+    ["Every Weekday", "每个工作日"],
+    ["Custom Schedule", "自定义计划"],
+    ["Custom Cron", "自定义 Cron 表达式"],
+    ["Cron Expression", "Cron 表达式"],
+    ["Custom cron schedule", "自定义 Cron 计划"],
+    ["Time of Day", "执行时间"],
+    ["Day of Week", "星期几"],
+    ["Day of Month", "每月日期"],
+    ["Select Timezone", "选择时区"],
+    ["Local Time", "本地时间"],
+    ["Allowed Folders", "允许访问的文件夹"],
+    ["Working Directory", "工作目录"],
+    ["Select Working Directory", "选择工作目录"],
+    ["Access Grants", "权限授权"],
+    ["Granted Permissions", "已授予权限"],
+    ["Model Tier", "模型级别"],
+    ["Restart Policy", "重启策略"],
+    ["On Failure", "失败时重启"],
+    ["Max Retries", "最大重试次数"],
+    ["Automate repetitive tasks on a schedule.", "按计划自动执行重复性任务。"],
+    ["Create scheduled agents that run in the background.", "创建在后台按计划自动运行的智能体任务。"],
+
+    // 6. 插件市场 (Plugin Marketplace)、官方货架、精选插件描述与账户连接 (Accounts)
+    ["Plugin Marketplace", "插件市场"],
+    ["Agent Marketplace", "智能体扩展市场"],
+    ["Plugins Manager", "插件管理器"],
+    ["Manage Plugins", "管理插件"],
+    ["Browse Plugins", "浏览插件"],
+    ["Browse Marketplace", "浏览扩展市场"],
+    ["Explore Plugins", "探索插件"],
+    ["All Plugins", "全部插件"],
+    ["Installed Plugins", "已安装插件"],
+    ["Enabled Plugins", "已启用插件"],
+    ["Disabled Plugins", "已禁用插件"],
+    ["Built-in Plugins", "内置插件"],
+    ["Search plugins...", "搜索插件..."],
+    ["Search plugins and skills...", "搜索插件与技能..."],
+    ["Search marketplace...", "搜索扩展市场..."],
+    ["Filter plugins...", "筛选插件..."],
+    ["No plugins found", "未找到匹配的插件"],
+    ["No plugins installed", "暂未安装任何插件"],
+    ["No matching plugins", "没有匹配的插件"],
+    ["Build with Google", "使用 Google 平台构建"],
+    ["Build With Google", "使用 Google 平台构建"],
+    ["Connect to Google Workspace, including Docs, Sheets, Slides, Drive, and Calendar.", "连接到 Google Workspace，涵盖 Docs、Sheets、Slides、Drive 与 Calendar。"],
+    ["Build on Google's developer platforms, including Android, Chrome, Gemini, and Google Cloud.", "基于 Google 开发者平台进行构建，涵盖 Android、Chrome、Gemini 与 Google Cloud。"],
+    ["Design, Creative & Media", "设计、创意与媒体"],
+    ["Design, creative, and media tools.", "设计、创意与多媒体工具。"],
+    ["Productivity & Project Management", "生产力与项目管理"],
+    ["Plan work, track issues, sign documents, and manage your notes and files.", "规划工作、追踪问题、签署文档，并管理您的笔记与文件。"],
+    ["Cloud Hosting & Deployment", "云托管与部署"],
+    ["Deploy and host your apps, sites, and their backends.", "部署并托管您的应用、网站及其后端服务。"],
+    ["Developer Tools", "开发者工具"],
+    ["APIs, services, and tools to build, test, secure, and run your apps.", "用于构建、测试、加固和运行应用的 API、服务与工具。"],
+    ["Payments, CRM, accounting, data, identity, customer support, marketing, and workflow automation.", "涵盖支付、CRM、财务、数据、身份认证、客户支持、营销与工作流自动化。"],
+    ["More Plugins", "更多插件"],
+    ["Explore other marketplace customizations", "探索扩展市场中的更多自定义能力"],
+    ["Explore other marketplace customizations.", "探索扩展市场中的更多自定义能力。"],
+    ["Read, draft, and edit docs.", "读取、起草和编辑 Google 文档。"],
+    ["Read, write, and format spreadsheets.", "读取、写入和格式化电子表格。"],
+    ["Read, edit, and export presentations.", "读取、编辑和导出幻灯片演示文稿。"],
+    ["Manage events, check availability, and schedule meetings.", "管理日程事件、查看空闲时间并安排会议。"],
+    ["Search, read, organize, and share files in Google Drive.", "在 Google Drive 中搜索、读取、整理和共享文件。"],
+    ["Build applications with the Gemini Interactions API and Live API, including text, image, video, and speech generation, managed agents, and real-time multimodal interactions.", "使用 Gemini Interactions API 与 Live API 构建应用，支持文本、图像、视频与语音生成、托管智能体及实时多模态交互。"],
+    ["Reliable automation, in-depth debugging, and performance analysis in Chrome using Chrome DevTools and Puppeteer.", "使用 Chrome DevTools 与 Puppeteer 在 Chrome 中进行可靠自动化、深度调试与性能分析。"],
+    ["Reliable automation, in-depth debugging, and performance analysis in Chrome using Chrome DevTools and Puppeteer", "使用 Chrome DevTools 与 Puppeteer 在 Chrome 中进行可靠自动化、深度调试与性能分析"],
+    ["Prototype, build & run modern apps that users love with Firebase's backend, AI, and operational infrastructure.", "借助 Firebase 的后端、AI 与运维基础设施，快速构建并运行现代应用。"],
+    ["Connect to your managed Looker MCP server to explore data, run saved Looks, build dashboards, and validate LookML.", "连接托管的 Looker MCP 服务器，探索数据、运行已保存视图、构建仪表盘并验证 LookML。"],
+    ["Create, edit, review, resize, and brand-check Canva designs with the Canva MCP server.", "通过 Canva MCP 服务器创建、编辑、审查、调整尺寸并检查品牌规范。"],
+    ["Turn Figma designs into production code, map components with Code Connect, and create or edit Figma files in Antigravity.", "将 Figma 设计稿转化为生产代码，通过 Code Connect 映射组件，并在 Antigravity 中创建或编辑 Figma 文件。"],
+    ["Give your AI agent 600,000+ real app screens, and the skills to use them.", "为您的 AI 智能体提供 600,000+ 真实应用界面参考及配套设计技能。"],
+    ["The product development system for teams and agents.", "面向团队与智能体的现代产品研发协作系统。"],
+    ["Teamwork Graph CLI is Atlassian's agent-first interface to your entire work context: Jira issues, Confluence pages, Bitbucket PRs, along with your connected tools.", "Atlassian 面向智能体的全局工作上下文接口：打通 Jira 问题、Confluence 页面与 Bitbucket PR。"],
+    ["Connect Antigravity to Dropbox to search, inspect, summarize, share, collect uploads, organize folders, and clean up files with confirmation for write actions.", "将 Antigravity 连接到 Dropbox，支持搜索、查看、总结、分享、整理文件夹，并在写入操作前请求确认。"],
+    ["Build and deploy on Netlify: functions, edge functions, blobs, database, identity, forms, image CDN, caching, and AI Gateway, plus the Netlify MCP server.", "在 Netlify 上构建与部署：涵盖云函数、边缘函数、存储、数据库、身份认证、CDN 缓存与 Netlify MCP 服务。"],
+    ["Deploy, configure, monitor, and troubleshoot apps, databases, and infrastructure on Railway from Antigravity with Railway's agent skill and hosted MCP server.", "通过 Railway 智能体技能与托管 MCP 服务，在 Antigravity 中部署、配置、监控和排查应用与基础设施。"],
+    ["Build and deploy web apps and AI agents on Vercel with skills for Next.js, AI SDK, and cloud services, plus the official Vercel MCP server.", "使用 Next.js、AI SDK 技能与官方 Vercel MCP 服务，在 Vercel 上构建和部署 Web 应用与 AI 智能体。"],
+    ["Add Auth0 authentication to any app: login, MFA, SSO, Organizations, RBAC, custom domains, and branding.", "为任意应用接入 Auth0 身份认证：支持登录、多因素认证、SSO、组织架构、RBAC 权限与自定义域名。"],
+    ["Build and deploy Base44 full-stack apps: CLI project management, JavaScript/TypeScript SDK development, and production troubleshooting skills.", "构建并部署 Base44 全栈应用：涵盖 CLI 项目管理、JS/TS SDK 开发与生产环境排障技能。"],
+    ["Manage your Bigin CRM from Antigravity: review pipelines, find contacts and deals, log calls, plan follow-ups, and email customers.", "在 Antigravity 中管理 Bigin CRM：查看销售管道、查找联系人与交易、记录通话并规划客户跟进。"],
+    ["Databricks skills for the CLI, Apps, Lakebase, Model Serving, Lakeflow Jobs, Spark Declarative Pipelines, Declarative Automation Bundles (DABs), and connecting via MCP.", "提供 Databricks CLI、应用、模型服务、Lakeflow 作业、Spark 声明式流水线与 MCP 连接技能。"],
+    ["Install Plugin", "安装插件"],
+    ["Uninstall Plugin", "卸载插件"],
+    ["Enable Plugin", "启用插件"],
+    ["Disable Plugin", "禁用插件"],
+    ["Add from Marketplace", "从扩展市场添加"],
+    ["Installed from Marketplace", "已从扩展市场安装"],
+    ["Requires Restart", "需要重启"],
+    ["Restart Required", "需要重启"],
+    ["Reload Required", "需要重新加载"],
+    ["Built-in plugins cannot be uninstalled.", "内置插件无法卸载。"],
+    ["Built-in plugins cannot be uninstalled", "内置插件无法卸载"],
+    ["Suggested Prompts", "推荐提示词"],
+    ["Try a prompt", "试试以下提示词"],
+    ["Try it out", "立即体验"],
+    ["Included Customizations", "包含的自定义项"],
+    ["Included Skills", "包含的技能"],
+    ["Included Tools", "包含的工具"],
+    ["Included Agents", "包含的智能体"],
+    ["Included Rules", "包含的规则"],
+    ["Included Hooks", "包含的钩子"],
+    ["Included MCP Servers", "包含的 MCP 服务器"],
+    ["Connected Accounts", "已连接账户"],
+    ["Plugin Accounts", "插件账户"],
+    ["Account Sign-in", "账户登录"],
+    ["Connect Account", "连接账户"],
+    ["Add Account", "添加账户"],
+    ["Switch Account", "切换账户"],
+    ["Reconnect Account", "重新连接账户"],
+    ["Disconnect Account", "断开账户连接"],
+    ["Remove Account", "移除账户"],
+    ["Signed in", "已登录"],
+    ["Signed out", "未登录"],
+    ["Sign in required", "需要登录"],
+    ["Authentication required", "需要身份认证"],
+    ["Authentication failed", "身份认证失败"],
+    ["Token expired", "令牌已过期"],
+    ["Set as Default", "设为默认"],
+    ["Set as default", "设为默认"],
+    ["Default Account", "默认账户"],
+    ["Account Label", "账户标签"],
+    ["Edit Label", "编辑标签"],
+    ["No installed plugins declare account sign-ins.", "当前已安装的插件均无需连接外部账户。"],
+    ["No accounts connected.", "暂未连接任何账户。"],
+    ["No accounts connected", "暂未连接任何账户"],
+    ["Powers CLI:", "支持的命令行工具："],
+    ["Auth Provider", "认证服务商"],
+
+    // 7. Jupyter Notebook 查看器与交互式单元格
+    ["Jupyter Notebook", "Jupyter 笔记本"],
+    ["Notebook Viewer", "笔记本查看器"],
+    ["Run Cell", "运行单元格"],
+    ["Run All", "全部运行"],
+    ["Run All Cells", "运行所有单元格"],
+    ["Run Above", "运行上方单元格"],
+    ["Run Below", "运行下方单元格"],
+    ["Run Cell and Below", "运行当前及下方单元格"],
+    ["Stop Execution", "停止执行"],
+    ["Interrupt Kernel", "中断内核"],
+    ["Restart Kernel", "重启内核"],
+    ["Restart Kernel and Run All", "重启内核并全部运行"],
+    ["Clear Output", "清除输出"],
+    ["Clear Outputs", "清除所有输出"],
+    ["Clear All Outputs", "清除所有输出"],
+    ["Add Code Cell", "添加代码单元格"],
+    ["Add Markdown Cell", "添加 Markdown 单元格"],
+    ["Code Cell", "代码单元格"],
+    ["Markdown Cell", "Markdown 单元格"],
+    ["Move Cell Up", "上移单元格"],
+    ["Move Cell Down", "下移单元格"],
+    ["Delete Cell", "删除单元格"],
+    ["Select Kernel", "选择内核"],
+    ["Change Kernel", "切换内核"],
+    ["Python Environment", "Python 环境"],
+    ["Kernel Idle", "内核空闲"],
+    ["Kernel Busy", "内核忙碌"],
+    ["Kernel Disconnected", "内核已断开"],
+    ["Collapse Output", "折叠输出"],
+    ["Expand Output", "展开输出"],
+
+    // 8. 内置浏览器面板增强 (Downloads / History / Take Control)
+    ["Browser Downloads", "浏览器下载"],
+    ["Browsing History", "浏览历史"],
+    ["Browser History", "浏览历史"],
+    ["Clear Browsing Data", "清除浏览数据"],
+    ["Clear Downloads", "清除下载记录"],
+    ["Open Downloads Folder", "打开下载文件夹"],
+    ["Show in Folder", "在文件夹中显示"],
+    ["No downloads yet", "暂无下载内容"],
+    ["No browsing history", "暂无浏览历史"],
+    ["Take Control", "接管浏览器控制"],
+    ["Take Over", "接管控制"],
+    ["Return Control", "交还控制权"],
+    ["Return Control to Agent", "将控制权交还智能体"],
+    ["Agent is controlling the browser", "智能体正在控制浏览器"],
+    ["You are controlling the browser", "您正在手动控制浏览器"],
+    ["Enter URL or search...", "输入网址或搜索内容..."],
+    ["Reload Page", "重新加载页面"],
+    ["Hard Reload", "强制刷新页面"],
+    ["Open DevTools", "打开开发者工具"],
+
+    // 9. Sidecar 扩展面板 (Android Device Hub / Android Compose Preview)
+    ["Android Device Hub", "Android 设备中心"],
+    ["Device Hub", "设备中心"],
+    ["Android Compose Preview", "Android Compose 预览"],
+    ["Compose Preview", "Compose 预览"],
+    ["Virtual Devices", "虚拟设备 (AVD)"],
+    ["Physical Devices", "物理真机"],
+    ["Available Devices", "可用设备"],
+    ["Create Device", "创建虚拟设备"],
+    ["Create AVD", "创建 AVD"],
+    ["Start Device", "启动设备"],
+    ["Stop Device", "停止设备"],
+    ["Cold Boot", "冷启动"],
+    ["Wipe Data", "擦除数据"],
+    ["Delete Device", "删除设备"],
+    ["Start Mirroring", "开始屏幕镜像"],
+    ["Stop Mirroring", "停止屏幕镜像"],
+    ["Take Screenshot", "截取屏幕"],
+    ["Inspect Layout", "检查界面布局"],
+    ["Rotate Left", "向左旋转"],
+    ["Rotate Right", "向右旋转"],
+    ["Device Back", "返回键"],
+    ["Device Home", "主页键"],
+    ["App Switch", "多任务键"],
+    ["Power Button", "电源键"],
+    ["Volume Up", "音量加"],
+    ["Volume Down", "音量减"],
+    ["No devices connected", "未连接任何设备"],
+    ["No virtual devices found", "未找到虚拟设备"],
+    ["No @Preview functions found", "未找到 @Preview 预览函数"],
+    ["Render Preview", "渲染预览"],
+    ["Re-render Preview", "重新渲染预览"],
+    ["Refresh Preview", "刷新预览"],
+    ["Rendering Compose preview...", "正在渲染 Compose 预览..."],
+
+    // 10. 模型选择 (Model Selection)、代码差异审查与子智能体协同
+    ["Model Selection", "模型选择"],
+    ["Reasoning Effort", "推理强度"],
+    ["Thinking Effort", "思考强度"],
+    ["Effort Level", "推理级别"],
+    ["Auto-select model", "自动选择模型"],
+    ["Automatically choose the best model for each task.", "根据任务复杂度自动选择最合适的模型。"],
+    ["Accept All", "全部接受"],
+    ["Reject All", "全部拒绝"],
+    ["Discard All", "全部放弃"],
+    ["Discard Changes", "放弃更改"],
+    ["Accept Changes", "接受更改"],
+    ["Accept File", "接受此文件更改"],
+    ["Reject File", "拒绝此文件更改"],
+    ["Approve Plan", "批准计划"],
+    ["Proceed with Plan", "按此计划执行"],
+    ["Request Changes", "请求修改"],
+    ["Open Diff", "打开差异对比"],
+    ["View Diff", "查看差异对比"],
+    ["Side by Side", "并排视图"],
+    ["Inline Diff", "内联差异视图"],
+    ["No changes to review", "暂无需要审查的更改"],
+    ["All changes reviewed", "所有更改已审查完毕"],
+    ["Subagent Activity", "子智能体活动"],
+    ["Running Subagents", "运行中的子智能体"],
+    ["Completed Subagents", "已完成的子智能体"],
+    ["View Subagent", "查看子智能体会话"],
+    ["Stop Subagent", "停止子智能体"],
+    ["Ask Question", "等待您的回答"],
+    ["Select all that apply", "可多选"],
+    ["Other (specify)", "其他（请说明）"],
+    ["Type your answer...", "输入您的回答..."],
+
+    // 11. v2.29.0 深度拾遗全覆盖（内置浏览器、语音模式、远程控制、快捷键全集、拆散链接片段与配额细分）
+    // 11.1 内置浏览器与浏览器子智能体 (Built-in Browser & Browser Subagent)
+    ["Built-in Browser", "内置浏览器"],
+    ["Built-In Browser", "内置浏览器"],
+    ["External Browser", "外部浏览器"],
+    ["System Browser", "系统默认浏览器"],
+    ["Default Browser", "默认浏览器"],
+    ["Configure link opening and built-in browser preferences.", "配置链接打开方式和内置浏览器偏好设置。"],
+    ["Open Links In", "链接打开方式"],
+    ["Open links in", "链接打开方式"],
+    ["Choose where links open by default when clicked.", "选择点击链接时的默认打开位置。"],
+    ["Download Location", "下载保存位置"],
+    ["Folder where files downloaded in the built-in browser are saved.", "内置浏览器下载文件的保存文件夹。"],
+    ["Clear visited URLs and autocomplete suggestions from the built-in browser.", "清除内置浏览器中已访问的网址记录和自动补全建议。"],
+    ["Clear cookies, cache, and site data from the built-in browser.", "清除内置浏览器中的 Cookie、缓存和网站数据。"],
+    ["Clear Site Data", "清除网站数据"],
+    ["Cookies and Site Data", "Cookie 与网站数据"],
+    ["Browser Subagent", "浏览器子智能体"],
+    ["Configure the browser subagent. It requires", "配置浏览器子智能体。此功能需要安装"],
+    ["to be installed. The browser subagent can be invoked by typing /browser in the conversation input box.", "后方可使用。在对话输入框中输入 /browser 即可调用浏览器子智能体。"],
+    ["to be installed. The browser subagent can be invoked by typing", "后方可使用。可在对话输入框中输入"],
+    ["The browser subagent can be invoked by typing /browser in the conversation input box.", "在对话输入框中输入 /browser 即可调用浏览器子智能体。"],
+    ["The browser subagent can be invoked by typing", "可在对话输入框中输入"],
+    ["in the conversation input box.", "来调用该功能。"],
+    ["in the conversation input box", "（在对话输入框中）"],
+    ["to be installed.", "后方可使用。"],
+
+    // 11.2 语音模式与音频输入输出设置 (Voice mode & Audio Devices)
+    ["Voice mode", "语音模式"],
+    ["Configure voice mode preferences.", "配置语音模式偏好设置。"],
+    ["Configure microphone and speaker settings for voice mode.", "配置语音模式的麦克风和扬声器设置。"],
+    ["Configure microphone and audio settings for voice mode.", "配置语音模式的麦克风和音频设置。"],
+    ["Configure audio input and output devices for voice mode.", "配置语音模式的音频输入与输出设备。"],
+    ["Configure audio input and output for voice conversations.", "配置语音对话的音频输入与输出。"],
+    ["Choose which microphone to use for voice mode.", "选择语音模式使用的麦克风设备。"],
+    ["Choose which microphone to use for voice input.", "选择用于语音输入的麦克风设备。"],
+    ["Select the microphone used for voice input.", "选择用于语音输入的麦克风。"],
+    ["Input device used for voice conversations.", "用于语音对话的音频输入设备。"],
+    ["Choose which speaker to use for voice mode.", "选择语音模式使用的扬声器设备。"],
+    ["Choose which speaker or headphones to use for voice output.", "选择用于语音输出的扬声器或耳机。"],
+    ["Select the speaker used for voice output.", "选择用于语音输出的扬声器。"],
+    ["Output device used for voice conversations.", "用于语音对话的音频输出设备。"],
+    ["System default", "系统默认"],
+    ["No microphone found", "未检测到麦克风"],
+    ["No microphones found", "未检测到麦克风"],
+    ["No speaker found", "未检测到扬声器"],
+    ["No speakers found", "未检测到扬声器"],
+    ["No audio devices found", "未检测到音频设备"],
+    ["Noise Suppression", "噪音抑制"],
+    ["Echo Cancellation", "回声消除"],
+    ["Auto Gain Control", "自动增益控制"],
+    ["Voice Speed", "语音语速"],
+    ["Playback Speed", "播放倍速"],
+    ["Spoken Responses", "语音朗读回复"],
+    ["Auto-play voice responses", "自动播放语音回复"],
+
+    // 11.3 远程控制与设备配对二维码 (Remote Control & Device Name)
+    ["Device Name", "设备名称"],
+    ["Device Nickname", "设备昵称"],
+    ["Scan the code to open this device in Remote Control, or copy link.", "扫描二维码以在远程控制中打开此设备，或复制链接。"],
+    ["Scan the code to open this device in", "扫描二维码以打开此设备的"],
+    ["Scan QR code to connect", "扫描二维码进行连接"],
+    ["Scan the QR code to connect from your phone or another device.", "使用手机或其他设备扫描二维码进行连接。"],
+    ["copy link", "复制链接"],
+    ["Copy Link", "复制链接"],
+    ["Copy link", "复制链接"],
+    ["Link copied", "链接已复制"],
+    ["Link copied!", "链接已复制！"],
+    ["Link copied to clipboard", "链接已复制到剪贴板"],
+    ["Copied to clipboard", "已复制到剪贴板"],
+    ["Copied to clipboard!", "已复制到剪贴板！"],
+    ["Allow remote access to this device from the companion web app.", "允许从配套网页应用远程访问此设备。"],
+    ["Control your local Antigravity sessions from another device.", "从其他设备远程控制您的本地 Antigravity 会话。"],
+    ["Remote Control is enabled", "远程控制已启用"],
+    ["Remote Control is disabled", "远程控制已禁用"],
+    ["Waiting for connection...", "正在等待连接..."],
+    ["Reconnecting...", "正在重新连接..."],
+
+    // 11.4 对话设置、项目外独立会话与自定义项 Token 占用细分 (Conversations & Customizations Breakdown)
+    ["Settings for conversations outside of projects.", "项目外独立对话的设置。"],
+    ["Settings for conversations in this project.", "此项目内对话的设置。"],
+    ["Settings for conversations across all projects.", "所有项目对话的通用设置。"],
+    ["Permissions for conversations outside of projects.", "项目外独立对话的权限设置。"],
+    ["Permissions for conversations in this project.", "此项目内对话的权限设置。"],
+    ["Customizations for conversations outside of projects.", "项目外独立对话的自定义项。"],
+    ["Customizations for conversations in this project.", "此项目内对话的自定义项。"],
+    ["The breakdown below shows token usage from customizations like rules, skills, and MCP. If a budget is exceeded, large rules are demoted to path pointers and large customizations are excluded automatically.", "下方明细展示了规则、技能和 MCP 等自定义项的 Token 占用情况。若超出配额预算，较大的规则会自动降级为路径指针，过大的自定义项将被自动排除。"],
+    ["The breakdown below shows token usage from customizations like rules, skills, and MCP. If the budget is exceeded, large rules are demoted to path pointers and large customizations are excluded automatically.", "下方明细展示了规则、技能和 MCP 等自定义项的 Token 占用情况。若超出配额预算，较大的规则会自动降级为路径指针，过大的自定义项将被自动排除。"],
+    ["The breakdown below shows token usage from customizations like rules, skills, and MCP.", "下方明细展示了规则、技能和 MCP 等自定义项的 Token 占用情况。"],
+    ["If a budget is exceeded, large rules are demoted to path pointers and large customizations are excluded automatically.", "若超出配额预算，较大的规则会自动降级为路径指针，过大的自定义项将被自动排除。"],
+    ["If the budget is exceeded, large rules are demoted to path pointers and large customizations are excluded automatically.", "若超出配额预算，较大的规则会自动降级为路径指针，过大的自定义项将被自动排除。"],
+    ["Other Customizations", "其他自定义项"],
+    ["Hide breakdown", "隐藏细分详情"],
+    ["Hide 1 breakdown", "隐藏 1 项细分详情"],
+    ["Show breakdowns", "显示细分详情"],
+    ["Hide breakdowns", "隐藏细分详情"],
+    ["Path Pointers", "路径指针"],
+    ["Path Pointer", "路径指针"],
+    ["Demoted to path pointer", "已降级为路径指针"],
+    ["Excluded (exceeds budget)", "已排除（超出预算）"],
+    ["Budget exceeded", "已超出配额预算"],
+    ["Customization Budget", "自定义项配额预算"],
+    ["Past Conversations", "历史对话记忆"],
+    ["Conversation Memory", "对话记忆"],
+    ["Knowledge Base", "知识库"],
+    ["Manage Knowledge", "管理知识库"],
+    ["Auto-Expand Changes Overview", "自动展开更改概览"],
+
+    // 11.5 键盘快捷键全集与斜杠复合动作名 (Keyboard Shortcuts)
+    ["Add to Chat/Quote", "添加到聊天 / 引用"],
+    ["Add to Chat / Quote", "添加到聊天 / 引用"],
+    ["Add Selection to Chat", "将选区添加到聊天"],
+    ["Quote Selection", "引用选中文本"],
+    ["Archive This Conversation", "归档此对话"],
+    ["Unarchive This Conversation", "取消归档此对话"],
+    ["Delete This Conversation", "删除此对话"],
+    ["Pin This Conversation", "固定此对话"],
+    ["Unpin This Conversation", "取消固定此对话"],
+    ["Rename This Conversation", "重命名此对话"],
+    ["Duplicate This Conversation", "复制此对话"],
+    ["Focus Chat Input", "聚焦聊天输入框"],
+    ["Focus Agent Input", "聚焦智能体输入框"],
+    ["Focus Conversation", "聚焦对话区域"],
+    ["Focus Sidebar", "聚焦侧边栏"],
+    ["Focus Editor", "聚焦编辑器"],
+    ["Focus Browser", "聚焦浏览器"],
+    ["Stop Generation", "停止生成"],
+    ["Stop Agent", "停止智能体"],
+    ["Interrupt Agent", "打断智能体"],
+    ["Cancel Generation", "取消生成"],
+    ["Approve Action", "批准操作"],
+    ["Reject Action", "拒绝操作"],
+    ["Approve Command", "批准命令"],
+    ["Reject Command", "拒绝命令"],
+    ["Accept All Changes", "接受所有更改"],
+    ["Reject All Changes", "拒绝所有更改"],
+    ["Next Change", "下一处更改"],
+    ["Previous Change", "上一处更改"],
+    ["Next Tab", "下一个标签页"],
+    ["Previous Tab", "上一个标签页"],
+    ["Reopen Closed Tab", "重新打开已关闭标签页"],
+    ["Toggle Left Sidebar", "切换左侧边栏"],
+    ["Toggle Right Sidebar", "切换右侧边栏"],
+    ["Toggle Bottom Panel", "切换底部面板"],
+    ["Toggle Review Pane", "切换审查窗格"],
+    ["Toggle Browser Pane", "切换浏览器窗格"],
+    ["Toggle Editor Pane", "切换编辑器窗格"],
+    ["Toggle Voice Mode", "切换语音模式"],
+    ["Mute/Unmute", "静音 / 取消静音"],
+    ["Mute / Unmute", "静音 / 取消静音"],
+    ["Expand/Collapse", "展开 / 折叠"],
+    ["Expand / Collapse", "展开 / 折叠"],
+    ["Show/Hide", "显示 / 隐藏"],
+    ["Show / Hide", "显示 / 隐藏"],
+    ["Accept/Reject", "接受 / 拒绝"],
+    ["Accept / Reject", "接受 / 拒绝"],
+    ["Play/Pause", "播放 / 暂停"],
+    ["Play / Pause", "播放 / 暂停"],
+    ["Open/Close", "打开 / 关闭"],
+    ["Open / Close", "打开 / 关闭"],
+    ["Quick Open", "快速打开"],
+    ["Go to File", "转到文件"],
+    ["Go to Line", "转到行"],
+    ["Go to Symbol", "转到符号"],
+    ["Go to Definition", "转到定义"],
+    ["Peek Definition", "速览定义"],
+    ["Find References", "查找所有引用"],
+    ["Format Document", "格式化文档"],
+    ["Reset Shortcuts", "重置快捷键"],
+    ["Reset All Shortcuts", "重置所有快捷键"],
+    ["Reset to Default", "恢复默认"],
+    ["Press keys...", "请按下快捷键..."],
+    ["Press desired key combination", "请按下目标快捷键组合"],
+    ["Record Shortcut", "录制快捷键"],
+    ["Search shortcuts...", "搜索快捷键..."],
+    ["Search keybindings...", "搜索快捷键绑定..."],
+    ["No shortcuts found", "未找到匹配的快捷键"],
+
+    // 11.6 行内链接拆散长句片段、应用设置、CLI 与自定义管理项 (Split-Link Fragments & App/Customizations)
+    ["Enforce settings that prevent the agent from autonomously running targeted exploits and require human review for all agent actions. Visit", "强制启用安全设置，防止智能体自主运行高危利用，并要求对所有智能体操作进行人工审核。详情请访问"],
+    ["Enforce settings that prevent the agent from autonomously running targeted exploits and require human review for all agent actions.", "强制启用安全设置，防止智能体自主运行高危利用，并要求对所有智能体操作进行人工审核。"],
+    ["for details.", "了解详情。"],
+    ["Show a floating notification card when background conversations need your input. Answer questions, approve commands, and grant permissions without leaving your current conversation. Share feedback at", "当后台会话需要您的输入时显示浮动通知卡片。无需离开当前对话即可回答问题、批准命令并授予权限。反馈请访问"],
+    ["Show a floating notification card when background conversations need your input. Answer questions, approve commands, and grant permissions without leaving your current conversation.", "当后台会话需要您的输入时显示浮动通知卡片。无需离开当前对话即可回答问题、批准命令并授予权限。"],
+    ["Share feedback at", "反馈请访问"],
+    ["You currently don't have any MCP Servers installed.", "您当前尚未安装任何 MCP 服务器。"],
+    ["Add an MCP server above", "请在上方添加 MCP 服务器"],
+    ["Add an MCP server above.", "请在上方添加 MCP 服务器。"],
+    ["an MCP server above", "上方的 MCP 服务器"],
+    ["an MCP server above.", "上方的 MCP 服务器。"],
+    ["You can upgrade to a", "您可以升级到"],
+    ["plan to receive the highest rate limits.", "套餐以获得最高速率配额限制。"],
+    ["plan to receive higher rate limits.", "套餐以获得更高的速率配额限制。"],
+    ["Command Line Tool", "命令行工具 (CLI)"],
+    ["Install Command Line Tool", "安装命令行工具"],
+    ["Install 'agy' in PATH", "将 'agy' 安装到系统 PATH"],
+    ["Install agy in PATH", "将 agy 安装到系统 PATH"],
+    ["Launch Antigravity from the terminal using the agy command.", "在终端中使用 agy 命令快速启动 Antigravity。"],
+    ["Launch at Login", "开机自动启动"],
+    ["Open at Login", "登录时自动打开"],
+    ["Start Antigravity automatically when you log in.", "登录系统时自动启动 Antigravity。"],
+    ["Hardware Acceleration", "硬件加速"],
+    ["Use GPU acceleration when available.", "可用时启用 GPU 硬件加速。"],
+    ["Default Editor", "默认外部编辑器"],
+    ["External Editor", "外部编辑器"],
+    ["Open in External Editor", "在外部编辑器中打开"],
+    ["Choose which editor opens files externally.", "选择在外部打开文件时使用的编辑器。"],
+    ["Restart Language Server", "重启语言服务器"],
+    ["Open Logs Folder", "打开日志文件夹"],
+    ["Show Logs", "显示日志"],
+    ["Clear Cache", "清除缓存"],
+    ["Reset Onboarding", "重置新手引导"],
+    ["Release Channel", "更新通道"],
+    ["Update Channel", "更新通道"],
+    ["Up to date", "已是最新版本"],
+    ["Antigravity is up to date.", "Antigravity 已是最新版本。"],
+    ["Add Rule", "添加规则"],
+    ["New Rule", "新建规则"],
+    ["Edit Rule", "编辑规则"],
+    ["Delete Rule", "删除规则"],
+    ["Global Rules", "全局规则"],
+    ["Workspace Rules", "工作区规则"],
+    ["Project Rules", "项目规则"],
+    ["Add Skill", "添加技能"],
+    ["New Skill", "新建技能"],
+    ["Edit Skill", "编辑技能"],
+    ["Delete Skill", "删除技能"],
+    ["Global Skills", "全局技能"],
+    ["Workspace Skills", "工作区技能"],
+    ["Project Skills", "项目技能"],
+    ["Add Hook", "添加钩子"],
+    ["New Hook", "新建钩子"],
+    ["Edit Hook", "编辑钩子"],
+    ["Delete Hook", "删除钩子"],
+    ["Add Agent", "添加智能体"],
+    ["New Agent", "新建智能体"],
+    ["Edit Agent", "编辑智能体"],
+    ["Delete Agent", "删除智能体"],
+    ["No rules configured", "暂未配置任何规则"],
+    ["No skills configured", "暂未配置任何技能"],
+    ["No hooks configured", "暂未配置任何钩子"],
+    ["No custom agents configured", "暂未配置任何自定义智能体"],
+
+    // ===== 12. v65 地板式全界面深度清扫（覆盖侧边面板、右键多级菜单、查看器、权限弹窗、快捷键与危险区域） =====
+    // 12.1 侧边面板 (Side Panel)、标签选择器、快捷启动栏与拆分菜单
+    ["Search or enter a URL", "搜索文件或输入网址"],
+    ["Search or enter URL", "搜索文件或输入网址"],
+    ["Search or enter a URL...", "搜索文件或输入网址..."],
+    ["Search files or enter a URL", "搜索文件或输入网址"],
+    ["Search files or enter URL", "搜索文件或输入网址"],
+    ["Enter a URL or search", "输入网址或搜索文件"],
+    ["Type a URL or search...", "输入网址或搜索内容..."],
+    ["Open File", "打开文件"],
+    ["Open File...", "打开文件..."],
+    ["Open Files", "打开文件"],
+    ["Open Folder...", "打开文件夹..."],
+    ["New File", "新建文件"],
+    ["New Folder", "新建文件夹"],
+    ["New Browser Tab", "新建浏览器标签页"],
+    ["Open Browser", "打开浏览器"],
+    ["Open Terminal", "打开终端"],
+    ["Split Right", "向右拆分"],
+    ["Split Left", "向左拆分"],
+    ["Split Up", "向上拆分"],
+    ["Split Down", "向下拆分"],
+    ["Split Horizontally", "水平拆分"],
+    ["Split Vertically", "垂直拆分"],
+    ["Open to the Side", "在侧边打开"],
+    ["Open in Side Panel", "在侧边面板中打开"],
+    ["Open in Aux Pane", "在辅助窗格中打开"],
+    ["Open in New Tab", "在新标签页中打开"],
+    ["Active Documents", "当前活跃文档"],
+    ["Associated Documents", "关联文档"],
+    ["Generated Artifacts", "生成的产物"],
+    ["Recent Files", "最近文件"],
+    ["Open Files", "打开的文件"],
+    ["Open Editors", "打开的编辑器"],
+    ["Open Tabs", "打开的标签页"],
+    ["Modified Files", "已修改文件"],
+    ["Untracked Files", "未跟踪文件"],
+    ["Edited Files", "已编辑文件"],
+    ["No open tabs", "暂无打开的标签页"],
+    ["No open files", "暂无打开的文件"],
+    ["No recent files", "暂无最近打开的文件"],
+    ["No extensions", "暂无可用扩展"],
+    ["No extensions installed", "暂未安装任何扩展"],
+    ["No extensions available", "暂无可用扩展"],
+    ["No UI extensions", "暂无界面扩展"],
+    ["Manage Extensions", "管理扩展"],
+    ["UI Extensions", "界面扩展"],
+    ["Extension Panels", "扩展面板"],
+    ["Pin Tab", "固定标签页"],
+    ["Unpin Tab", "取消固定标签页"],
+    ["Close Others", "关闭其他"],
+    ["Close to the Right", "关闭右侧标签页"],
+    ["Close Saved", "关闭已保存"],
+    ["Filter files...", "筛选文件..."],
+    ["Empty folder", "空文件夹"],
+    ["No folder open", "尚未打开文件夹"],
+    ["No workspace open", "尚未打开工作区"],
+
+    // 12.2 对话与项目右键多级菜单、复制子菜单与项目危险区域 (Context Menus & Danger Zone)
+    ["删除 项目", "删除项目"],
+    ["创建 项目", "创建项目"],
+    ["移除 项目", "移除项目"],
+    ["打开 文件", "打开文件"],
+    ["下载 文件", "下载文件"],
+    ["Mark Unread", "标记为未读"],
+    ["Mark Read", "标记为已读"],
+    ["Mark unread", "标记为未读"],
+    ["Mark read", "标记为已读"],
+    ["Conversation Name", "对话名称"],
+    ["Conversation Title", "对话标题"],
+    ["Conversation ID", "对话 ID"],
+    ["Conversation Link", "对话链接"],
+    ["Conversation URL", "对话链接"],
+    ["Conversation Markdown", "对话 Markdown"],
+    ["Project Name", "项目名称"],
+    ["Project ID", "项目 ID"],
+    ["Project Path", "项目路径"],
+    ["Project Description", "项目描述"],
+    ["Project Instructions", "项目指令"],
+    ["Project Icon", "项目图标"],
+    ["Workspace Name", "工作区名称"],
+    ["Workspace ID", "工作区 ID"],
+    ["Workspace Path", "工作区路径"],
+    ["Folder Name", "文件夹名称"],
+    ["Folder Path", "文件夹路径"],
+    ["Copy Project Name", "复制项目名称"],
+    ["Copy Project ID", "复制项目 ID"],
+    ["Copy Project Path", "复制项目路径"],
+    ["Copy Conversation Name", "复制对话名称"],
+    ["Copy Conversation Title", "复制对话标题"],
+    ["Copy Conversation ID", "复制对话 ID"],
+    ["Copy Conversation Link", "复制对话链接"],
+    ["Copy Conversation URL", "复制对话链接"],
+    ["Copy Workspace Name", "复制工作区名称"],
+    ["Copy Workspace Path", "复制工作区路径"],
+    ["Copy Relative Path", "复制相对路径"],
+    ["Copy Folder Path", "复制文件夹路径"],
+    ["Relative Path", "相对路径"],
+    ["Full Path", "完整路径"],
+    ["Show in File Explorer", "在文件资源管理器中显示"],
+    ["Reveal in File Explorer", "在文件资源管理器中显示"],
+    ["Show in Explorer", "在资源管理器中显示"],
+    ["Reveal in Explorer", "在资源管理器中显示"],
+    ["Show in Finder", "在访达中显示"],
+    ["Reveal in Finder", "在访达中显示"],
+    ["Show in File Manager", "在文件管理器中显示"],
+    ["Reveal in File Manager", "在文件管理器中显示"],
+    ["Open in File Explorer", "在文件资源管理器中打开"],
+    ["Open in Finder", "在访达中打开"],
+    ["Open in Default App", "使用默认应用打开"],
+    ["Open in System Default", "使用系统默认应用打开"],
+    ["Open in Integrated Terminal", "在集成终端中打开"],
+    ["Open in External Terminal", "在外部终端中打开"],
+    ["Move to Trash", "移至回收站"],
+    ["Move to Recycle Bin", "移至回收站"],
+    ["Remove from Project", "从项目中移除"],
+    ["Add Folder to Project", "添加文件夹到项目"],
+    ["Add Folder to Workspace", "添加文件夹到工作区"],
+    ["Remove Folder", "移除文件夹"],
+    ["Working Folders", "工作文件夹"],
+    ["Workspace Folders", "工作区文件夹"],
+    ["Primary Folder", "主文件夹"],
+    ["No folders added", "尚未添加任何文件夹"],
+    ["Danger Zone", "危险区域"],
+    ["Danger zone", "危险区域"],
+    ["Archive Project", "归档项目"],
+    ["Unarchive Project", "取消归档项目"],
+    ["Remove Project", "移除项目"],
+    ["Leave Project", "退出项目"],
+    ["Reset Project", "重置项目"],
+    ["Reset Project Settings", "重置项目设置"],
+    ["Delete All Conversations", "删除所有对话"],
+    ["Archive All Conversations", "归档所有对话"],
+    ["This action cannot be undone.", "此操作无法撤销。"],
+    ["This action cannot be undone", "此操作无法撤销"],
+    ["Your local files will not be deleted.", "您的本地文件不会被删除。"],
+    ["Files on disk will not be deleted.", "磁盘上的本地文件不会被删除。"],
+    ["Your files on disk will not be affected.", "磁盘上的本地文件不会受到影响。"],
+    ["Type project name to confirm", "输入项目名称以确认"],
+
+    // 12.3 文件查看器、Markdown 预览、PDF 查看器与代码差异视图 (File / Markdown / PDF / Diff Viewers)
+    ["Download File", "下载文件"],
+    ["Download Image", "下载图片"],
+    ["Download PDF", "下载 PDF"],
+    ["Download Artifact", "下载产物"],
+    ["Download All", "全部下载"],
+    ["Export as PDF", "导出为 PDF"],
+    ["Export as Markdown", "导出为 Markdown"],
+    ["Export as HTML", "导出为 HTML"],
+    ["Export as JSON", "导出为 JSON"],
+    ["Export as PNG", "导出为 PNG"],
+    ["Export as SVG", "导出为 SVG"],
+    ["Export as Text", "导出为纯文本"],
+    ["Copy Markdown", "复制 Markdown"],
+    ["Copy Raw", "复制原始文本"],
+    ["Copy Selection", "复制选中内容"],
+    ["View Raw", "查看原始文本"],
+    ["View Preview", "查看预览"],
+    ["Live Preview", "实时预览"],
+    ["Markdown Preview", "Markdown 预览"],
+    ["Raw Text", "原始文本"],
+    ["Table of Contents", "目录大纲"],
+    ["Toggle Table of Contents", "切换目录大纲"],
+    ["Show Table of Contents", "显示目录大纲"],
+    ["Hide Table of Contents", "隐藏目录大纲"],
+    ["Document Outline", "文档大纲"],
+    ["No headings found", "暂无标题大纲"],
+    ["Find in File", "在文件中查找"],
+    ["Word Wrap", "自动换行"],
+    ["Toggle Word Wrap", "切换自动换行"],
+    ["Line Numbers", "显示行号"],
+    ["Toggle Minimap", "切换代码缩略图"],
+    ["PDF Viewer", "PDF 查看器"],
+    ["Fit to Width", "适应宽度"],
+    ["Fit to Page", "适应页面"],
+    ["Fit Width", "适应宽度"],
+    ["Fit Page", "适应页面"],
+    ["Rotate Clockwise", "顺时针旋转"],
+    ["Rotate Counterclockwise", "逆时针旋转"],
+    ["Previous Page", "上一页"],
+    ["Next Page", "下一页"],
+    ["First Page", "第一页"],
+    ["Last Page", "最后一页"],
+    ["Binary file", "二进制文件"],
+    ["Binary file not shown", "二进制文件无法直接显示"],
+    ["Binary file cannot be displayed.", "二进制文件无法直接预览。"],
+    ["File is too large to display", "文件过大，无法直接显示"],
+    ["File is too large to preview.", "文件过大，无法预览。"],
+    ["Open Anyway", "仍然打开"],
+    ["Changes Overview", "更改概览"],
+    ["Staged Changes", "已暂存更改"],
+    ["Unstaged Changes", "未暂存更改"],
+    ["Stage File", "暂存此文件"],
+    ["Unstage File", "取消暂存此文件"],
+    ["Stage All", "全部暂存"],
+    ["Unstage All", "全部取消暂存"],
+    ["Stage Changes", "暂存更改"],
+    ["Unstage Changes", "取消暂存更改"],
+    ["Unified View", "统一视图"],
+    ["Split View", "并排视图"],
+    ["Unified Diff", "统一差异视图"],
+    ["Split Diff", "并排差异视图"],
+    ["Ignore Whitespace", "忽略空白差异"],
+    ["Hide Whitespace", "隐藏空白字符"],
+    ["Show Whitespace", "显示空白字符"],
+    ["Expand Unchanged Lines", "展开未更改行"],
+
+    // 12.4 全局权限、权限预设与工具权限抽屉全集 (Global Permissions & 9 Tool Permissions)
+    ["Global Permissions", "全局权限"],
+    ["Project Permissions", "项目权限"],
+    ["Workspace Permissions", "工作区权限"],
+    ["Conversation Permissions", "对话权限"],
+    ["Shared Permissions", "共享权限"],
+    ["Permission Preset", "权限预设"],
+    ["Permission Presets", "权限预设"],
+    ["Tool Permissions", "工具权限"],
+    ["Manage Tool Permissions", "管理工具权限"],
+    ["Configure Tool Permissions", "配置工具权限"],
+    ["Permission Rules", "权限规则"],
+    ["Permission Grants", "权限授权"],
+    ["Tool Execution Policy", "工具执行策略"],
+    ["Internet Access Policy", "网络访问策略"],
+    ["File Access Policy", "文件访问策略"],
+    ["Non-Workspace File Access", "工作区外文件访问"],
+    ["Non-Workspace Files", "工作区外文件"],
+    ["External File Access", "外部文件访问"],
+    ["External Files", "工作区外文件"],
+    ["Workspace Files", "工作区文件"],
+    ["Edit Files", "编辑文件"],
+    ["Modify Files", "修改文件"],
+    ["Create Files", "创建文件"],
+    ["Delete Files", "删除文件"],
+    ["File Read", "文件读取"],
+    ["File Write", "文件写入"],
+    ["File Edit", "文件编辑"],
+    ["File Delete", "文件删除"],
+    ["Run Commands", "运行命令"],
+    ["Execute Commands", "执行命令"],
+    ["Run Terminal Commands", "运行终端命令"],
+    ["Shell Commands", "Shell 命令"],
+    ["Background Commands", "后台命令"],
+    ["Unsandboxed Commands", "沙盒外命令"],
+    ["Outside Sandbox", "沙盒外运行"],
+    ["Sandbox Mode", "沙盒模式"],
+    ["Terminal Sandbox", "终端沙盒"],
+    ["Web Search", "网页搜索"],
+    ["Search Web", "搜索网页"],
+    ["Web Fetch", "网页抓取"],
+    ["Fetch URLs", "抓取 URL"],
+    ["Open URLs", "打开 URL"],
+    ["Web Access", "网络访问"],
+    ["Internet Access", "互联网访问"],
+    ["Network Access", "网络访问"],
+    ["Browser Actions", "浏览器操作"],
+    ["Browser Actuation", "浏览器交互"],
+    ["Browser JavaScript", "浏览器脚本执行"],
+    ["Use Browser", "使用浏览器"],
+    ["External Tools", "外部工具"],
+    ["Plugin Tools", "插件工具"],
+    ["MCP Tool Calls", "MCP 工具调用"],
+    ["Invoke Subagents", "调用子智能体"],
+    ["Spawn Subagents", "创建子智能体"],
+    ["Image Generation", "图像生成"],
+    ["Generate Images", "生成图像"],
+    ["Allow List", "允许列表"],
+    ["Ask List", "询问列表"],
+    ["Deny List", "拒绝列表"],
+    ["Command Allowlist", "命令允许列表"],
+    ["Command Denylist", "命令拒绝列表"],
+    ["Browser Allowlist", "浏览器允许列表"],
+    ["Browser Denylist", "浏览器拒绝列表"],
+    ["URL Allowlist", "URL 允许列表"],
+    ["URL Denylist", "URL 拒绝列表"],
+    ["Path Allowlist", "路径允许列表"],
+    ["Path Denylist", "路径拒绝列表"],
+    ["Deny > Ask > Allow", "拒绝 > 询问 > 允许"],
+    ["Precedence: Deny > Ask > Allow", "优先级：拒绝 > 询问 > 允许"],
+    ["Add Permission Rule", "添加权限规则"],
+    ["Add Pattern", "添加匹配规则"],
+    ["Add Path", "添加路径"],
+    ["Add Command", "添加命令"],
+    ["Add URL", "添加 URL"],
+    ["Add Domain", "添加域名"],
+    ["Add Tool", "添加工具"],
+    ["No permission rules", "暂无权限规则"],
+    ["No permissions configured", "暂未配置任何权限"],
+    ["No rules added yet", "暂未添加任何规则"],
+    ["Revert to Global", "恢复为全局设置"],
+    ["Revert to Global Settings", "恢复为全局设置"],
+    ["Revert to global settings", "恢复为全局设置"],
+    ["Override Global Settings", "覆盖全局设置"],
+    ["Inherits Global Permissions", "继承全局权限"],
+    ["Using Global Permissions", "正在使用全局权限"],
+    ["Reset to Preset", "恢复为预设默认值"],
+    ["Auto (Recommended)", "自动（推荐）"],
+
+    // 12.5 快捷键全集深度补完 (Keyboard Shortcuts — 对话移动、侧边面板切换与全局动作)
+    ["Move Conversation Up", "上移对话"],
+    ["Move Conversation Down", "下移对话"],
+    ["Previous Side Panel Tab", "上一个侧边栏标签页"],
+    ["Next Side Panel Tab", "下一个侧边栏标签页"],
+    ["Side Panel", "侧边面板"],
+    ["Toggle Side Panel", "切换侧边面板"],
+    ["Open Side Panel", "打开侧边面板"],
+    ["Close Side Panel", "关闭侧边面板"],
+    ["Hide Side Panel", "隐藏侧边面板"],
+    ["Focus Side Panel", "聚焦侧边面板"],
+    ["Maximize Side Panel", "最大化侧边面板"],
+    ["Toggle Maximize Side Panel", "切换侧边面板最大化"],
+    ["New Side Panel Tab", "新建侧边栏标签页"],
+    ["Close Side Panel Tab", "关闭侧边栏标签页"],
+    ["Reopen Closed Side Panel Tab", "重新打开已关闭的侧边栏标签页"],
+    ["Open Overview Tab", "打开概览标签页"],
+    ["Open Review Tab", "打开审查标签页"],
+    ["Open Files Tab", "打开文件标签页"],
+    ["Open Terminal Tab", "打开终端标签页"],
+    ["Open Browser Tab", "打开浏览器标签页"],
+    ["Open Extensions Tab", "打开扩展标签页"],
+    ["Open Subagents Tab", "打开子智能体标签页"],
+    ["Move Tab Left", "左移标签页"],
+    ["Move Tab Right", "右移标签页"],
+    ["Move Pane Left", "左移窗格"],
+    ["Move Pane Right", "右移窗格"],
+    ["Select First Conversation", "选择第一个对话"],
+    ["Select Last Conversation", "选择最后一个对话"],
+    ["Open Recent Conversation", "打开最近对话"],
+    ["Switch Conversation", "切换对话"],
+    ["Search in Conversation", "在对话中搜索"],
+    ["Clear Conversation", "清空对话"],
+    ["Fork Conversation", "从此处分支对话"],
+    ["Branch Conversation", "分支此对话"],
+    ["Share Conversation", "分享对话"],
+    ["Open Project Settings", "打开项目设置"],
+    ["New Standalone Conversation", "新建独立对话"],
+    ["Open Automations", "打开自动化面板"],
+    ["Open Customizations", "打开自定义设置"],
+    ["Open Plugin Marketplace", "打开插件市场"],
+    ["Open Extensions", "打开扩展面板"],
+    ["Cycle Model", "循环切换模型"],
+    ["Next Model", "下一个模型"],
+    ["Previous Model", "上一个模型"],
+    ["Cycle Reasoning Effort", "切换推理强度"],
+    ["Cycle Permission Preset", "切换权限预设"],
+    ["Toggle Autonomous Mode", "切换自主模式"],
+    ["Toggle Plan Mode", "切换计划模式"],
+    ["Attach File to Chat", "添加文件到聊天"],
+    ["Submit Message", "发送消息"],
+    ["Queue Message", "排队发送消息"],
+    ["Edit Last Message", "编辑上一条消息"],
+    ["Copy Last Response", "复制最后一条回复"],
+    ["Copy Last Code Block", "复制最后一个代码块"],
+
+    // 12.6 侧栏底部反馈、输入框附件、停靠审批卡片、通知音效、无障碍与自定义扩展项
+    ["Give Feedback", "提供反馈"],
+    ["Give feedback", "提供反馈"],
+    ["Share Feedback", "分享反馈"],
+    ["Submit Feedback", "提交反馈"],
+    ["Help & Feedback", "帮助与反馈"],
+    ["Report a Bug", "报告缺陷"],
+    ["Report Bug", "报告缺陷"],
+    ["Docs & Guides", "文档与指南"],
+    ["Join Community", "加入社区"],
+    ["Attach File", "添加文件"],
+    ["Attach Files", "添加文件"],
+    ["Attach Image", "添加图片"],
+    ["Attach Folder", "添加文件夹"],
+    ["Upload File", "上传文件"],
+    ["Upload Files", "上传文件"],
+    ["Upload Image", "上传图片"],
+    ["Paste from Clipboard", "从剪贴板粘贴"],
+    ["Drop files here", "拖拽文件到此处"],
+    ["Drop files to attach", "松开以添加附件"],
+    ["Drag and drop files here", "拖拽文件到此处上传"],
+    ["Unsupported file type", "不支持的文件类型"],
+    ["Waiting for approval", "等待批准"],
+    ["Waiting for your approval", "等待您的批准"],
+    ["Waiting for input", "等待输入"],
+    ["Waiting for your input", "等待您的输入"],
+    ["Waiting for answer", "等待回答"],
+    ["Waiting for your response", "等待您的回复"],
+    ["Command requires approval", "命令需要批准"],
+    ["File access requires approval", "文件访问需要批准"],
+    ["Browser action requires approval", "浏览器操作需要批准"],
+    ["MCP tool requires approval", "MCP 工具调用需要批准"],
+    ["Always allow in this project", "在此项目中始终允许"],
+    ["Always allow globally", "全局始终允许"],
+    ["Context Summary", "上下文摘要"],
+    ["Compacted Context", "已压缩上下文"],
+    ["Context compacted", "上下文已压缩"],
+    ["Conversation compacted", "对话已压缩"],
+    ["Desktop Notifications", "桌面通知"],
+    ["Push Notifications", "推送通知"],
+    ["Mobile Push Notifications", "移动端推送通知"],
+    ["Notification Sound", "通知提示音"],
+    ["Notification Sounds", "通知提示音"],
+    ["Notification Volume", "通知音量"],
+    ["Sound Volume", "提示音音量"],
+    ["Test Sound", "测试提示音"],
+    ["Play Test Sound", "试听提示音"],
+    ["Completion Sound", "完成提示音"],
+    ["When action is needed", "需要您操作时"],
+    ["When agent finishes", "智能体完成任务时"],
+    ["When in background", "应用处于后台时"],
+    ["Screen Reader Mode", "屏幕阅读器模式"],
+    ["Reduce Motion", "减弱动态效果"],
+    ["Interface Font", "界面字体"],
+    ["UI Font", "界面字体"],
+    ["System UI", "系统默认字体"],
+    ["Show Timestamps", "显示时间戳"],
+    ["Relative Timestamps", "相对时间戳"],
+    ["Always on", "常驻启用"],
+    ["Always On", "常驻启用"],
+    ["Model Decision", "由模型决定"],
+    ["On Demand", "按需调用"],
+    ["Manual Only", "仅手动调用"],
+    ["Fix with Agent", "使用智能体修复"],
+    ["+ Global", "+ 全局"],
+    ["+ Workspace", "+ 工作区"],
+    ["+ Project", "+ 项目"],
+    ["Additional Options", "更多选项"],
+    ["Search in Marketplace", "在扩展市场中搜索"],
+    ["Starter Prompts", "示例提示词"],
+    ["MCP Apps", "MCP 应用"],
+    ["Configure Server", "配置服务器"],
+    ["Restart Server", "重启服务器"],
+    ["Reconnect Server", "重新连接服务器"],
+    ["Failed to start", "启动失败"],
+    ["Manage Subscription", "管理订阅"],
+    ["Billing & Plan", "账单与套餐"],
+
+    // 12.7 外观 (Appearance)、对话步骤、对比度、聊天宽度与无障碍描述全量补齐 + 半截文本自愈
+    ["Optimize the interface and 终端输出 for screen readers.", "针对屏幕阅读器优化界面与终端输出。"],
+    ["Optimize the interface and terminal output for screen readers.", "针对屏幕阅读器优化界面与终端输出。"],
+    ["Optimize the interface for screen readers.", "针对屏幕阅读器优化界面显示。"],
+    ["Conversation Steps", "对话步骤"],
+    ["Choose how much detail is shown during a conversation.", "选择对话过程中显示的详细程度。"],
+    ["Control how intermediate agent steps and tool calls are displayed.", "控制智能体中间执行步骤和工具调用的展示方式。"],
+    ["Chat Width", "聊天宽度"],
+    ["Maximum Chat Width", "最大聊天宽度"],
+    ["Increase color contrast for better readability.", "提高色彩对比度以增强可读性。"],
+    ["Adjust the color contrast of the interface.", "调整界面的色彩对比度。"],
+    ["Choose the font family used across the interface.", "选择整个界面使用的字体系列。"],
+    ["Choose the font family used in code blocks and editors.", "选择代码块和编辑器中使用的字体系列。"],
+    ["Minimize animations and transitions across the interface.", "减少界面中的动画与过渡效果。"],
+    ["Customize the look and feel of Antigravity.", "自定义 Antigravity 的视觉外观与交互体验。"],
+    ["Configure the visual theme, font, and layout preferences.", "配置视觉主题、字体与界面布局偏好。"],
+    ["UI Density", "界面紧凑度"],
+    ["UI Scale", "界面缩放比例"],
+    ["Interface Scale", "界面缩放比例"],
+    ["Code Font Size", "代码字号"],
+    ["Editor Font Size", "编辑器字号"],
+    ["Terminal Font Size", "终端字号"],
+    ["Terminal Font", "终端字体"],
+    ["Cursor Style", "光标样式"],
+    ["Cursor Blinking", "光标闪烁"],
+    ["Smooth Scrolling", "平滑滚动"],
+    ["Bracket Pair Colorization", "括号配对着色"],
+    ["Render Whitespace", "显示空白字符"],
+    ["Sticky Scroll", "粘性滚动"],
   ]);
 
   function formatDuration(text) {
@@ -1207,6 +2890,27 @@ const overlaySource = String.raw`
       .trim();
   }
 
+  function formatRelativeOrInner(raw) {
+    if (!raw) return '';
+    const t = raw.trim();
+    const exact = exactPhrases.get(t) ?? phrasesLower.get(t.toLowerCase());
+    if (exact !== undefined) return exact;
+    return t
+      .replace(/^just now$/i, '刚刚')
+      .replace(/^yesterday$/i, '昨天')
+      .replace(/^tomorrow$/i, '明天')
+      .replace(/^today$/i, '今天')
+      .replace(/^never$/i, '从不')
+      .replace(/^(\d+)\s*years?\s+ago$/i, '$1 年前')
+      .replace(/^(\d+)\s*months?\s+ago$/i, '$1 个月前')
+      .replace(/^(\d+)\s*weeks?\s+ago$/i, '$1 周前')
+      .replace(/^(\d+)\s*days?\s+ago$/i, '$1 天前')
+      .replace(/^(\d+)\s*hours?\s+ago$/i, '$1 小时前')
+      .replace(/^(\d+)\s*minutes?\s+ago$/i, '$1 分钟前')
+      .replace(/^(\d+)\s*seconds?\s+ago$/i, '$1 秒前')
+      .replace(/\(Recommended\)/gi, '(推荐)');
+  }
+
   // ===== 第三级：动态上下文正则替换规则 =====
   const patterns = [
     [/^Version (\d+\.\d+\.\d+(?:-[A-Za-z0-9.]+)?)$/gi, '版本 $1'],
@@ -1216,8 +2920,8 @@ const overlaySource = String.raw`
     [/^Worked for (\d+)s$/gi, '已工作 $1 秒'],
     [/^Worked for (\d+)m$/gi, '已工作 $1 分钟'],
     [/^Worked for (\d+)h$/gi, '已工作 $1 小时'],
-    [/^Updated (.+)$/gi, '更新于 $1'],
-    [/^Created (.+)$/gi, '创建于 $1'],
+    [/^Updated (.+)$/gi, (_m, s) => '更新于 ' + formatRelativeOrInner(s)],
+    [/^Created (.+)$/gi, (_m, s) => '创建于 ' + formatRelativeOrInner(s)],
     [/^(\d+) files? changed$/gi, '$1 个文件已更改'],
     [/^(\d+) tasks? running$/gi, '$1 个任务运行中'],
     [/^(\d+)tasksrunning$/gi, '$1 个任务运行中'],
@@ -1234,13 +2938,21 @@ const overlaySource = String.raw`
     [/^Unfold lines (\d+-\d+)$/gi, '展开第 $1 行'],
     [/^Close ([^\s].*\.[A-Za-z0-9]+)$/g, '关闭 $1'],
     [/^关闭([^\s].*\.[A-Za-z0-9]+)$/g, '关闭 $1'],
-    [/^Agent permissions preset selector, current: (.+)$/gi, '智能体权限预设选择器，当前：$1'],
-    [/^Select model, current: (.+)$/gi, '选择模型，当前：$1'],
+    [/^Agent permissions preset selector, current: (.+)$/gi, (_m, s) => '智能体权限预设选择器，当前：' + formatRelativeOrInner(s)],
+    [/^Select model, current: (.+)$/gi, (_m, s) => '选择模型，当前：' + s.trim().replace(/Gemini ([^(]+) \((Minimal|Low|Medium|High|Max)\)/g, (_m2, model, effort) => 'Gemini ' + model.trim() + ' (' + (exactPhrases.get(effort) ?? effort) + ')')],
     [/· Exited with code (\d+)/g, '· 退出码 $1'],
     [/·Exited与code (\d+)/g, '· 退出码 $1'],
     [/See all \((\d+)\)/g, '查看全部 ($1)'],
     [/(\d+) agents running/g, '$1 个代理正在运行'],
     [/1 agent running/g, '1 个代理正在运行'],
+    [/^(\d+)\s*years?\s+ago$/gi, '$1 年前'],
+    [/^(\d+)\s*months?\s+ago$/gi, '$1 个月前'],
+    [/^(\d+)\s*weeks?\s+ago$/gi, '$1 周前'],
+    [/^(\d+)\s*days?\s+ago$/gi, '$1 天前'],
+    [/^(\d+)\s*hours?\s+ago$/gi, '$1 小时前'],
+    [/^(\d+)\s*minutes?\s+ago$/gi, '$1 分钟前'],
+    [/^(\d+)\s*seconds?\s+ago$/gi, '$1 秒前'],
+    [/\(Recommended\)/gi, '(推荐)'],
     [/^(\d+)mo$/g, '$1 个月前'],
     [/^(\d+)y$/g, '$1 年前'],
     [/^(\d+)w$/g, '$1 周前'],
@@ -1249,7 +2961,7 @@ const overlaySource = String.raw`
     [/^(\d+)m$/g, '$1 分钟前'],
     [/^(\d+)s$/g, '$1 秒前'],
     [/(\d+(?:\.\d+)?)% of the customization budget is available\./g, '自定义预算还剩 $1%。'],
-    [/Your Plan: (.+)/g, '你的套餐：$1'],
+    [/Your Plan: (.+)/g, (_m, s) => '你的套餐：' + formatRelativeOrInner(s)],
     [/You currently don't have any MCP Servers installed\. 添加 an MCP server above/g, '你当前还没有安装任何 MCP 服务器。请在上方添加 MCP 服务器。'],
     [/Also includes (?:全局设置|global settings) when working in this project\./g, '在此项目中工作时也包含全局设置。'],
     [/Also includes (?:全局设置|global settings)/g, '也包含全局设置'],
@@ -1326,27 +3038,414 @@ const overlaySource = String.raw`
     [/Yes, and always allow in this workspace/g, '是，并在此工作区始终允许'],
     [/Yes, and always allow/g, '是，并始终允许'],
     [/Refreshes in (\d+) hours?, (\d+) minutes?/g, '$1 小时 $2 分钟后刷新'],
-    [/Gemini ([^(]+) \((High|Medium|Low)\)/g, (_match, model, effort) => 'Gemini ' + model.trim() + ' (' + (exactPhrases.get(effort) ?? effort) + ')'],
+    [/Gemini ([^(]+) \((Minimal|Low|Medium|High|Max)\)/g, (_match, model, effort) => 'Gemini ' + model.trim() + ' (' + (exactPhrases.get(effort) ?? effort) + ')'],
     [/Antigravity has been redesigned to put agents first with new capabilities\. If you'd still like a code editor, you can download it as a separate app named Antigravity IDE\./g, 'Antigravity 已重新设计为智能体优先，并加入了新能力。如果你仍然需要代码编辑器，可以下载名为 Antigravity IDE 的独立应用。'],
+
+    // v2.28-v2.29 动态卡片截断、账户状态、工具计数与自动化周期匹配
+    [/^Build applications with the Gemini Interactions API and Live API[\s\S]*$/i, '使用 Gemini Interactions API 与 Live API 构建应用，支持多模态生成、托管智能体与实时交互…'],
+    [/^Teamwork Graph CLI is Atlassian's agent-first interface[\s\S]*$/i, 'Atlassian 面向智能体的全局工作上下文接口：打通 Jira、Confluence 与 Bitbucket…'],
+    [/^Connect Antigravity to Dropbox to search, inspect[\s\S]*$/i, '将 Antigravity 连接到 Dropbox，支持搜索、查看、总结、分享与整理文件…'],
+    [/^Build and deploy on Netlify: functions, edge functions[\s\S]*$/i, '在 Netlify 上构建与部署：涵盖云函数、边缘函数、数据库、CDN 与 MCP 服务…'],
+    [/^Deploy, configure, monitor, and troubleshoot apps, databases, and infrastructure on Railway[\s\S]*$/i, '在 Antigravity 中通过 Railway 技能与托管 MCP 服务部署、配置和监控应用与基础设施…'],
+    [/^Build and deploy web apps and AI agents on Vercel[\s\S]*$/i, '使用 Next.js、AI SDK 技能与官方 Vercel MCP 服务构建和部署 Web 应用与智能体…'],
+    [/^Databricks skills for the CLI, Apps, Lakebase[\s\S]*$/i, '提供 Databricks CLI、应用、模型服务、Lakeflow 作业、Spark 流水线与 MCP 连接技能…'],
+    [/^Signed in as (.+)$/gi, '已登录为 $1'],
+    [/^Connected as (.+)$/gi, '已连接为 $1'],
+    [/^Logged in as (.+)$/gi, '已登录为 $1'],
+    [/^By ([A-Za-z0-9 _.-]+)$/g, '提供方：$1'],
+    [/^(\d+) plugins? installed$/gi, '已安装 $1 个插件'],
+    [/^(\d+) plugins? enabled$/gi, '已启用 $1 个插件'],
+    [/^(\d+) skills? available$/gi, '$1 个可用技能'],
+    [/^(\d+) skills?$/gi, '$1 个技能'],
+    [/^(\d+) tools?$/gi, '$1 个工具'],
+    [/^(\d+) MCP servers?$/gi, '$1 个 MCP 服务器'],
+    [/^(\d+) accounts? connected$/gi, '已连接 $1 个账户'],
+    [/^Open (.+) panel$/gi, '打开 $1 面板'],
+    [/^Toggle (.+) panel$/gi, '切换 $1 面板'],
+    [/^Read (\d+) files?$/gi, '已读取 $1 个文件'],
+    [/^Edited (\d+) files?$/gi, '已编辑 $1 个文件'],
+    [/^Created (\d+) files?$/gi, '已创建 $1 个文件'],
+    [/^Deleted (\d+) files?$/gi, '已删除 $1 个文件'],
+    [/^Searched (\d+) files?$/gi, '已搜索 $1 个文件'],
+    [/^Ran (\d+) tests?$/gi, '已运行 $1 项测试'],
+    [/^(\d+) subagents? running$/gi, '$1 个子智能体运行中'],
+    [/^(\d+) subagents? completed$/gi, '$1 个子智能体已完成'],
+    [/^(\d+) additions?, (\d+) deletions?$/gi, '新增 $1 行，删除 $2 行'],
+    [/^\+(\d+)\s*\/?\s*-(\d+) lines?$/gi, '+$1 / -$2 行'],
+    [/^Next run: (.+)$/gi, (_m, s) => '下次运行：' + formatRelativeOrInner(s)],
+    [/^Last run: (.+)$/gi, (_m, s) => '上次运行：' + formatRelativeOrInner(s)],
+    [/^Every (\d+) minutes?$/gi, '每 $1 分钟'],
+    [/^Every (\d+) hours?$/gi, '每 $1 小时'],
+    [/^Every (\d+) days?$/gi, '每 $1 天'],
+    [/^Thought for (\d+)m (\d+)s$/gi, '思考耗时 $1 分 $2 秒'],
+    [/^Worked for (\d+)m (\d+)s$/gi, '已工作 $1 分 $2 秒'],
+    [/^(\d+)m (\d+)s$/g, '$1 分 $2 秒'],
+
+    // v2.29.0 动态细分详情展开、系统音频设备名、重置倒计时与通用动态计数器
+    [/^Show (\d+) breakdowns?$/gi, '显示 $1 项细分详情'],
+    [/^Hide (\d+) breakdowns?$/gi, '隐藏 $1 项细分详情'],
+    [/^System default \((.+)\)$/gi, '系统默认 ($1)'],
+    [/^Default - (.+)$/gi, '默认 - $1'],
+    [/^Communications - (.+)$/gi, '通信默认 - $1'],
+    [/^Show (\d+) items?$/gi, '显示 $1 项'],
+    [/^Hide (\d+) items?$/gi, '隐藏 $1 项'],
+    [/^Show (\d+) more$/gi, '显示另外 $1 项'],
+    [/^(\d+) more\.\.\.$/gi, '还有 $1 项...'],
+    [/^\+(\d+) more$/gi, '另外 $1 项'],
+    [/^View all (\d+)$/gi, '查看全部 $1 项'],
+    [/^Show all (\d+)$/gi, '显示全部 $1 项'],
+    [/^(\d+) selected$/gi, '已选择 $1 项'],
+    [/^(\d+) results?$/gi, '$1 个结果'],
+    [/^(\d+) matches$/gi, '$1 处匹配'],
+    [/^1 match$/gi, '1 处匹配'],
+    [/^(\d+) rules?$/gi, '$1 条规则'],
+    [/^(\d+) agents?$/gi, '$1 个智能体'],
+    [/^(\d+) hooks?$/gi, '$1 个钩子'],
+    [/^(\d+) workflows?$/gi, '$1 个工作流'],
+    [/^(\d+) automations?$/gi, '$1 个自动化任务'],
+    [/^(\d+) conversations?$/gi, '$1 个对话'],
+    [/^(\d+) projects?$/gi, '$1 个项目'],
+    [/^(\d+) devices?$/gi, '$1 台设备'],
+    [/^Resets in (.+?)\.?$/gi, (_match, time) => formatDuration(time) + '后重置'],
+    [/^Refreshes in (.+?)\.?$/gi, (_match, time) => formatDuration(time) + '后刷新'],
+
+    // v65 危险区域删除确认、JSX 粗体拆分计数、文件导出格式与快捷键动态匹配
+    [/^Permanently delete (.+?) including (\d+) active conversations?(\.?)$/gi, (_m, name, n, dot) => '永久删除“' + name.trim() + '”及其包含的 ' + n + ' 个活跃对话' + (dot ? '。' : '')],
+    [/^Permanently delete (.+?) including (\d+) conversations?(\.?)$/gi, (_m, name, n, dot) => '永久删除“' + name.trim() + '”及其包含的 ' + n + ' 个对话' + (dot ? '。' : '')],
+    [/^Permanently delete (.+?) including\s*$/gi, (_m, name) => '永久删除“' + name.trim() + '”及其包含的 '],
+    [/^Permanently delete\s+$/gi, '永久删除 '],
+    [/^Delete (.+?) including\s*$/gi, (_m, name) => '删除“' + name.trim() + '”及其包含的 '],
+    [/^Are you sure you want to permanently delete (.+?)\?$/gi, '确定要永久删除“$1”吗？'],
+    [/^Are you sure you want to delete (.+?)\?$/gi, '确定要删除“$1”吗？'],
+    [/^Are you sure you want to remove (.+?)\?$/gi, '确定要移除“$1”吗？'],
+    [/^(\d+) active conversations?(\.?)$/gi, (_m, n, dot) => n + ' 个活跃对话' + (dot ? '。' : '')],
+    [/^(\d+) archived conversations?(\.?)$/gi, (_m, n, dot) => n + ' 个已归档对话' + (dot ? '。' : '')],
+    [/^(\d+) conversations?\.$/gi, '$1 个对话。'],
+    [/^(\d+) active agents?(\.?)$/gi, (_m, n, dot) => n + ' 个活跃智能体' + (dot ? '。' : '')],
+    [/^(\d+) active tasks?(\.?)$/gi, (_m, n, dot) => n + ' 个活跃任务' + (dot ? '。' : '')],
+    [/^(\d+) folders?(\.?)$/gi, (_m, n, dot) => n + ' 个文件夹' + (dot ? '。' : '')],
+    [/^(\d+) workspaces?(\.?)$/gi, (_m, n, dot) => n + ' 个工作区' + (dot ? '。' : '')],
+    [/^(\d+) tabs?(\.?)$/gi, (_m, n, dot) => n + ' 个标签页' + (dot ? '。' : '')],
+    [/^(\d+) permissions?(\.?)$/gi, (_m, n, dot) => n + ' 项权限' + (dot ? '。' : '')],
+    [/^(\d+) extensions?(\.?)$/gi, (_m, n, dot) => n + ' 个扩展' + (dot ? '。' : '')],
+    [/^(\d+) plugins?(\.?)$/gi, (_m, n, dot) => n + ' 个插件' + (dot ? '。' : '')],
+    [/^(\d+) servers?(\.?)$/gi, (_m, n, dot) => n + ' 个服务器' + (dot ? '。' : '')],
+    [/^(\d+) subagents?(\.?)$/gi, (_m, n, dot) => n + ' 个子智能体' + (dot ? '。' : '')],
+    [/^(\d+) changes?(\.?)$/gi, (_m, n, dot) => n + ' 处更改' + (dot ? '。' : '')],
+    [/^(\d+) lines?(\.?)$/gi, (_m, n, dot) => n + ' 行' + (dot ? '。' : '')],
+    [/^Page (\d+) of (\d+)$/gi, '第 $1 / $2 页'],
+    [/^Export as ([A-Z0-9]+)$/gi, '导出为 $1'],
+    [/^Download as ([A-Z0-9]+)$/gi, '下载为 $1'],
+    [/^Save as ([A-Z0-9]+)$/gi, '另存为 $1'],
+    [/^Copy as ([A-Za-z0-9+]+)$/gi, '复制为 $1'],
+    [/^Switch to (?:Side Panel )?Tab (\d+)$/gi, '切换到第 $1 个标签页'],
+    [/^Go to Tab (\d+)$/gi, '前往第 $1 个标签页'],
+    [/^Select Tab (\d+)$/gi, '选择第 $1 个标签页'],
+    [/^([\d.]+)%\s*of the customization budget is available\.?$/gi, '$1% 的自定义配额预算可用。'],
   ];
 
-  // ===== 高性能安全汉化引擎（精确整词 O(1) + 多词大正则 + 变动互斥锁） =====
-  const sortedPhrases = [...phrases].sort((a, b) => b[0].length - a[0].length);
-  const phraseRegex = new RegExp(
-    sortedPhrases.map(([s]) => {
-      const startsWord = /^[A-Za-z0-9]/.test(s);
-      const endsWord = /[A-Za-z0-9]$/.test(s);
-      return (startsWord ? '(?<![A-Za-z0-9])' : '') + escapeRegExp(s) + (endsWord ? '(?![A-Za-z0-9])' : '');
-    }).join('|'),
-    'g'
-  );
+  // ===== 高性能低内存汉化引擎（O(1) 哈希 + 首词前缀桶扫描，彻底移除超大回溯正则节省 15~30MB V8 JIT 内存） =====
+  const isMultiTokenPhrase = (s) => /[\s\/.,:;!?()\-_\u4e00-\u9fa5]/.test(s);
+
+  function toAsciiLowerCode(code) {
+    return code >= 65 && code <= 90 ? code + 32 : code;
+  }
+
+  function isAlnumCode(code) {
+    return (
+      (code >= 48 && code <= 57) ||
+      (code >= 65 && code <= 90) ||
+      (code >= 97 && code <= 122)
+    );
+  }
+
+  function isWhitespaceCode(code) {
+    return code === 32 || code === 9 || code === 10 || code === 13 || code === 160;
+  }
+
+  const phrasesLower = new Map();
+  const phrasePrefixMap = new Map();
+  const firstTokenExtract = /^[a-z0-9\u4e00-\u9fa5]+/;
+
+  for (const [k, v] of phrases) {
+    const trimmedKey = k.trim();
+    const normKey = trimmedKey.replace(/\s+/g, ' ').toLowerCase();
+    if (!normKey) continue;
+    if (!isMultiTokenPhrase(normKey)) {
+      if (!exactPhrases.has(trimmedKey)) exactPhrases.set(trimmedKey, v);
+      continue;
+    }
+    if (!phrasesLower.has(normKey)) {
+      phrasesLower.set(normKey, v);
+      if (normKey.length <= 180) {
+        const fm = normKey.match(firstTokenExtract);
+        if (fm) {
+          const firstWord = fm[0];
+          let bucket = phrasePrefixMap.get(firstWord);
+          if (!bucket) {
+            bucket = [];
+            phrasePrefixMap.set(firstWord, bucket);
+          }
+          bucket.push({
+            normKey,
+            target: v,
+            endsAlnum: isAlnumCode(normKey.charCodeAt(normKey.length - 1))
+          });
+        }
+      }
+    }
+  }
+  // 立即释放原始重复 Map 内存，仅保留归一化单份哈希与轻量首词桶索引
+  phrases.clear();
+
+  for (const bucket of phrasePrefixMap.values()) {
+    if (bucket.length > 1) {
+      bucket.sort((a, b) => b.normKey.length - a.normKey.length);
+    }
+  }
+
+  function matchPhraseAt(value, startIdx, normKey, endsAlnum) {
+    const vLen = value.length;
+    const kLen = normKey.length;
+    let i = startIdx;
+    let j = 0;
+    while (j < kLen) {
+      if (i >= vLen) return -1;
+      const kc = normKey.charCodeAt(j);
+      if (kc === 32) {
+        if (!isWhitespaceCode(value.charCodeAt(i))) return -1;
+        while (i < vLen && isWhitespaceCode(value.charCodeAt(i))) i++;
+        j++;
+      } else {
+        if (toAsciiLowerCode(value.charCodeAt(i)) !== kc) return -1;
+        i++;
+        j++;
+      }
+    }
+    if (endsAlnum && i < vLen && isAlnumCode(value.charCodeAt(i))) return -1;
+    return i;
+  }
+
+  const tokenScanRegex = /[A-Za-z0-9\u4e00-\u9fa5]+/g;
+
+  function replaceEmbeddedPhrases(value) {
+    if (!value || value.length > 260) return value;
+    tokenScanRegex.lastIndex = 0;
+    let out = '';
+    let lastPos = 0;
+    let match;
+    while ((match = tokenScanRegex.exec(value)) !== null) {
+      const startIdx = match.index;
+      if (startIdx < lastPos) continue;
+      if (startIdx > 0 && isAlnumCode(value.charCodeAt(startIdx - 1)) && isAlnumCode(value.charCodeAt(startIdx))) {
+        continue;
+      }
+      const bucket = phrasePrefixMap.get(match[0].toLowerCase());
+      if (!bucket) continue;
+      for (let b = 0; b < bucket.length; b++) {
+        const entry = bucket[b];
+        const endIdx = matchPhraseAt(value, startIdx, entry.normKey, entry.endsAlnum);
+        if (endIdx !== -1) {
+          out += value.slice(lastPos, startIdx) + entry.target;
+          lastPos = endIdx;
+          tokenScanRegex.lastIndex = endIdx;
+          break;
+        }
+      }
+    }
+    return lastPos === 0 ? value : out + value.slice(lastPos);
+  }
 
   const translateCache = new Map();
-  const TRANSLATE_CACHE_MAX = 5000;
+  const TRANSLATE_CACHE_MAX = 1200;
+  const TRANSLATE_CACHE_MAX_LEN = 140;
+
+  function putTranslateCache(key, val) {
+    if (key.length > TRANSLATE_CACHE_MAX_LEN) return;
+    if (translateCache.size >= TRANSLATE_CACHE_MAX) {
+      let evict = 300;
+      for (const oldKey of translateCache.keys()) {
+        translateCache.delete(oldKey);
+        if (--evict <= 0) break;
+      }
+    }
+    translateCache.set(key, val);
+  }
+
   let isPatching = false;
 
-  function escapeRegExp(value) {
-    return value.replace(/[|\\{}()[\]^$+*?.]/g, '\\$&');
+  // ===== 第四级：确定性 UI 复合短语语法引擎（仅匹配完整 2~3 词首字母大写 UI 标签/菜单/动作，100% 拒绝半截中英混杂） =====
+  const uiBrandBlocklist = new Set([
+    'Google', 'Gemini', 'Claude', 'OpenAI', 'Anthropic', 'Android', 'Chrome', 'Chromium',
+    'GitHub', 'GitLab', 'Bitbucket', 'Firebase', 'Vercel', 'Netlify', 'Railway', 'Figma',
+    'Canva', 'Linear', 'Jira', 'Confluence', 'Dropbox', 'Looker', 'Databricks', 'Auth0',
+    'Jetski', 'Cascade', 'Monaco', 'Jupyter', 'Python', 'Node', 'Docker', 'Apple', 'Microsoft',
+    'Windows', 'Linux', 'Mac', 'Ubuntu', 'PowerShell', 'Bash', 'Zsh'
+  ]);
+
+  const uiVerbMap = new Map([
+    ['Open', '打开'], ['Close', '关闭'], ['View', '查看'], ['Show', '显示'], ['Hide', '隐藏'],
+    ['Add', '添加'], ['Create', '创建'], ['New', '新建'], ['Edit', '编辑'], ['Modify', '修改'],
+    ['Manage', '管理'], ['Configure', '配置'], ['Delete', '删除'], ['Remove', '移除'],
+    ['Clear', '清除'], ['Reset', '重置'], ['Refresh', '刷新'], ['Reload', '重新加载'],
+    ['Copy', '复制'], ['Export', '导出'], ['Import', '导入'], ['Download', '下载'], ['Upload', '上传'],
+    ['Search', '搜索'], ['Filter', '筛选'], ['Sort', '排序'], ['Select', '选择'], ['Switch', '切换'],
+    ['Toggle', '切换'], ['Focus', '聚焦'], ['Enable', '启用'], ['Disable', '禁用'],
+    ['Start', '启动'], ['Stop', '停止'], ['Pause', '暂停'], ['Resume', '恢复'], ['Restart', '重启'],
+    ['Give', '提供'], ['Send', '发送'], ['Submit', '提交'], ['Share', '分享'], ['Save', '保存'],
+    ['Restore', '恢复'], ['Archive', '归档'], ['Unarchive', '取消归档'], ['Pin', '固定'],
+    ['Unpin', '取消固定'], ['Duplicate', '复制'], ['Rename', '重命名'], ['Test', '测试'],
+    ['Check', '检查'], ['Browse', '浏览'], ['Explore', '探索'], ['Install', '安装'],
+    ['Uninstall', '卸载'], ['Connect', '连接'], ['Disconnect', '断开'], ['Reconnect', '重新连接'],
+    ['Attach', '添加'], ['Stage', '暂存'], ['Unstage', '取消暂存'], ['Discard', '放弃'],
+    ['Accept', '接受'], ['Reject', '拒绝'], ['Approve', '批准'], ['Deny', '拒绝'],
+    ['Expand', '展开'], ['Collapse', '折叠'], ['Maximize', '最大化'], ['Minimize', '最小化'],
+    ['Mark', '标记为']
+  ]);
+
+  const uiModifierMap = new Map([
+    ['Global', '全局'], ['Local', '本地'], ['Remote', '远程'], ['Cloud', '云端'],
+    ['Project', '项目'], ['Workspace', '工作区'], ['System', '系统'], ['Default', '默认'],
+    ['Custom', '自定义'], ['External', '外部'], ['Internal', '内部'], ['Active', '活跃'],
+    ['Recent', '最近'], ['Pinned', '已固定'], ['Archived', '已归档'], ['Shared', '共享'],
+    ['Personal', '个人'], ['Installed', '已安装'], ['Enabled', '已启用'], ['Disabled', '已禁用'],
+    ['Available', '可用'], ['Running', '运行中的'], ['Completed', '已完成的'], ['Failed', '失败的'],
+    ['Scheduled', '定时'], ['Paused', '已暂停'], ['All', '所有'], ['Other', '其他'],
+    ['More', '更多'], ['Advanced', '高级'], ['General', '常规'], ['Security', '安全'],
+    ['Network', '网络'], ['Terminal', '终端'], ['Browser', '浏览器'], ['Voice', '语音'],
+    ['Audio', '音频'], ['Microphone', '麦克风'], ['Speaker', '扬声器'], ['Agent', '智能体'],
+    ['Subagent', '子智能体'], ['Model', '模型'], ['Tool', '工具'], ['File', '文件'],
+    ['Folder', '文件夹'], ['Plugin', '插件'], ['Extension', '扩展'], ['Permission', '权限'],
+    ['Notification', '通知'], ['Appearance', '外观'], ['Editor', '编辑器'], ['Code', '代码'],
+    ['Conversation', '对话'], ['Chat', '聊天'], ['Automation', '自动化'], ['Shortcut', '快捷键'],
+    ['Account', '账户'], ['Device', '设备'], ['Environment', '环境'], ['Sandbox', '沙盒'],
+    ['Background', '后台'], ['Desktop', '桌面'], ['Mobile', '移动端'], ['Side', '侧边'],
+    ['Bottom', '底部'], ['Left', '左侧'], ['Right', '右侧'], ['Primary', '主'], ['Danger', '危险']
+  ]);
+
+  const uiNounMap = new Map([
+    ['File', '文件'], ['Files', '文件'], ['Folder', '文件夹'], ['Folders', '文件夹'],
+    ['Project', '项目'], ['Projects', '项目'], ['Workspace', '工作区'], ['Workspaces', '工作区'],
+    ['Conversation', '对话'], ['Conversations', '对话'], ['Chat', '聊天'], ['Chats', '聊天'],
+    ['Agent', '智能体'], ['Agents', '智能体'], ['Subagent', '子智能体'], ['Subagents', '子智能体'],
+    ['Model', '模型'], ['Models', '模型'], ['Permission', '权限'], ['Permissions', '权限'],
+    ['Preset', '预设'], ['Presets', '预设'], ['Rule', '规则'], ['Rules', '规则'],
+    ['Policy', '策略'], ['Policies', '策略'], ['Skill', '技能'], ['Skills', '技能'],
+    ['Plugin', '插件'], ['Plugins', '插件'], ['Extension', '扩展'], ['Extensions', '扩展'],
+    ['Hook', '钩子'], ['Hooks', '钩子'], ['Server', '服务器'], ['Servers', '服务器'],
+    ['Tool', '工具'], ['Tools', '工具'], ['Task', '任务'], ['Tasks', '任务'],
+    ['Automation', '自动化'], ['Automations', '自动化'], ['Schedule', '计划'], ['Schedules', '计划'],
+    ['Setting', '设置'], ['Settings', '设置'], ['Preference', '偏好设置'], ['Preferences', '偏好设置'],
+    ['Shortcut', '快捷键'], ['Shortcuts', '快捷键'], ['Notification', '通知'], ['Notifications', '通知'],
+    ['Sound', '提示音'], ['Sounds', '提示音'], ['Volume', '音量'], ['Account', '账户'],
+    ['Accounts', '账户'], ['Device', '设备'], ['Devices', '设备'], ['Environment', '环境'],
+    ['Environments', '环境'], ['History', '历史记录'], ['Logs', '日志'], ['Cache', '缓存'],
+    ['Data', '数据'], ['Output', '输出'], ['Outputs', '输出'], ['Preview', '预览'],
+    ['Artifact', '产物'], ['Artifacts', '产物'], ['Document', '文档'], ['Documents', '文档'],
+    ['Tab', '标签页'], ['Tabs', '标签页'], ['Pane', '窗格'], ['Panes', '窗格'],
+    ['Panel', '面板'], ['Panels', '面板'], ['Window', '窗口'], ['Windows', '窗口'],
+    ['Sidebar', '侧边栏'], ['Terminal', '终端'], ['Terminals', '终端'], ['Browser', '浏览器'],
+    ['Feedback', '反馈'], ['Usage', '用量'], ['Quota', '配额'], ['Limit', '限额'],
+    ['Limits', '限额'], ['Credits', '积分'], ['Options', '选项'], ['Actions', '操作'],
+    ['Commands', '命令'], ['Status', '状态'], ['Mode', '模式'], ['View', '视图'],
+    ['Viewer', '查看器'], ['Overview', '概览'], ['Summary', '摘要'], ['Details', '详情'],
+    ['Access', '访问权限'], ['Allowlist', '允许列表'], ['Denylist', '拒绝列表'],
+    ['Sandbox', '沙盒'], ['Theme', '主题'], ['Themes', '主题'], ['Font', '字体'],
+    ['Fonts', '字体'], ['Layout', '布局'], ['Width', '宽度'], ['Steps', '步骤'],
+    ['Step', '步骤'], ['Zone', '区域'], ['Name', '名称'], ['Title', '标题'],
+    ['Path', '路径'], ['Link', '链接'], ['Content', '内容'], ['Context', '上下文'],
+    ['Memory', '记忆'], ['Knowledge', '知识库'], ['Changes', '更改'], ['Diff', '差异对比'],
+    ['Outline', '大纲'], ['Image', '图片'], ['Images', '图片'], ['Unread', '未读'],
+    ['Read', '已读'], ['ID', ' ID'], ['URL', ' URL'], ['CLI', ' CLI'], ['PDF', ' PDF'], ['MCP', ' MCP']
+  ]);
+
+  function translateCompoundUiLabel(normTrimmed) {
+    if (!normTrimmed || normTrimmed.length > 42) return undefined;
+    const parts = normTrimmed.split(' ');
+    if (parts.length < 2 || parts.length > 4) return undefined;
+    for (const p of parts) {
+      if (uiBrandBlocklist.has(p)) return undefined;
+    }
+
+    // 方向性动作: Move <Target> Up/Down/Left/Right
+    if (parts.length >= 3 && parts[0] === 'Move') {
+      const dir = parts[parts.length - 1];
+      const dirMap = { Up: '上移', Down: '下移', Left: '左移', Right: '右移' };
+      if (dirMap[dir]) {
+        const mid = parts.slice(1, -1);
+        const midZh =
+          mid.length === 1
+            ? uiNounMap.get(mid[0])
+            : mid.length === 2 && uiModifierMap.has(mid[0]) && uiNounMap.has(mid[1])
+              ? uiModifierMap.get(mid[0]) + uiNounMap.get(mid[1])
+              : undefined;
+        if (midZh) return dirMap[dir] + midZh.trim();
+      }
+    }
+
+    // 前后切换动作: Next/Previous <Target>
+    if ((parts[0] === 'Next' || parts[0] === 'Previous') && parts.length >= 2) {
+      const prefix = parts[0] === 'Next' ? '下一个' : '上一个';
+      const rest = parts.slice(1);
+      if (rest.length === 1 && uiNounMap.has(rest[0])) {
+        return prefix + uiNounMap.get(rest[0]);
+      }
+      if (rest.length === 2 && uiModifierMap.has(rest[0]) && uiNounMap.has(rest[1])) {
+        return prefix + uiModifierMap.get(rest[0]) + uiNounMap.get(rest[1]);
+      }
+      if (
+        rest.length === 3 &&
+        uiModifierMap.has(rest[0]) &&
+        uiNounMap.has(rest[1]) &&
+        uiNounMap.has(rest[2])
+      ) {
+        return prefix + uiModifierMap.get(rest[0]) + uiNounMap.get(rest[1]) + uiNounMap.get(rest[2]);
+      }
+    }
+
+    // 2 词 Title-Case UI 标签/动作: <Verb|Modifier> <Noun>
+    if (parts.length === 2 && /^[A-Z][a-z]+$/.test(parts[0]) && /^(?:[A-Z][a-z]+|ID|URL|CLI|PDF|MCP)$/.test(parts[1])) {
+      if (parts[0] === parts[1]) return undefined;
+      const w1 = uiVerbMap.get(parts[0]) ?? uiModifierMap.get(parts[0]);
+      const w2 = uiNounMap.get(parts[1]);
+      if (w1 && w2) return w1 + w2;
+    }
+
+    // 3 词 Title-Case UI 动作: <Verb> <Modifier> <Noun>
+    if (
+      parts.length === 3 &&
+      /^[A-Z][a-z]+$/.test(parts[0]) &&
+      /^[A-Z][a-z]+$/.test(parts[1]) &&
+      /^(?:[A-Z][a-z]+|ID|URL|CLI|PDF|MCP)$/.test(parts[2])
+    ) {
+      const v = uiVerbMap.get(parts[0]);
+      const m = uiModifierMap.get(parts[1]);
+      const n = uiNounMap.get(parts[2]);
+      if (v && m && n) return v + m + n;
+    }
+
+    return undefined;
+  }
+
+  const allowedLowerTechTokens = new Set([
+    'tokens', 'token', 'agy', 'git', 'npm', 'npx', 'pnpm', 'yarn', 'ssh', 'wsl',
+    'http', 'https', 'localhost', 'gemini', 'chrome', 'json', 'yaml', 'html', 'pdf', 'cli', 'mcp'
+  ]);
+
+  function hasBrokenMixedSentence(original, candidate) {
+    if (candidate === original) return false;
+    if (/[\u4e00-\u9fa5]/.test(original)) return false;
+    if (!/[\u4e00-\u9fa5]/.test(candidate)) return false;
+    const lowerWords = candidate.match(/\b[a-z]{2,}\b/g);
+    if (!lowerWords) return false;
+    let untranslatedCount = 0;
+    for (const w of lowerWords) {
+      if (!allowedLowerTechTokens.has(w)) {
+        untranslatedCount++;
+        if (untranslatedCount >= 3) return true;
+      }
+    }
+    return false;
   }
 
   function translate(value) {
@@ -1354,39 +3453,77 @@ const overlaySource = String.raw`
     const cached = translateCache.get(value);
     if (cached !== undefined) return cached;
 
-    const trimmed = value.trim();
+    const matchTrim = value.match(/^([\s\u00a0]*)([\s\S]*?)([\s\u00a0]*)$/);
+    const leading = matchTrim ? matchTrim[1] : '';
+    const trimmed = matchTrim ? matchTrim[2] : value.trim();
+    const trailing = matchTrim ? matchTrim[3] : '';
     if (!trimmed) return value;
 
-    // 1. 优先尝试整词/整句 O(1) 哈希匹配（保留原始首尾空白）
-    const exactMatch = exactPhrases.get(trimmed) ?? phrases.get(trimmed);
+    const normTrimmed = trimmed.replace(/[\s\u00a0]+/g, ' ');
+
+    // 1. 优先尝试整词/整句 O(1) 哈希匹配（单字严格区分大小写，多词/复合短语自动忽略大小写与折行空白）
+    const exactMatch =
+      exactPhrases.get(trimmed) ??
+      exactPhrases.get(normTrimmed) ??
+      (isMultiTokenPhrase(normTrimmed) ? phrasesLower.get(normTrimmed.toLowerCase()) : undefined);
+
     if (exactMatch !== undefined) {
-      const startIdx = value.indexOf(trimmed);
-      const result = value.slice(0, startIdx) + exactMatch + value.slice(startIdx + trimmed.length);
-      if (translateCache.size >= TRANSLATE_CACHE_MAX) translateCache.clear();
-      translateCache.set(value, result);
+      const result = leading + exactMatch + trailing;
+      putTranslateCache(value, result);
       return result;
     }
 
-    // 2. 多词安全短语替换与上下文正则匹配
-    let next = value.replace(phraseRegex, (m) => phrases.get(m) ?? m);
+    // 2. 上下文动态正则匹配优先，再执行首词桶多词扫描（并拦截长句中只替换个别词导致的半截中英混杂）
+    let patterned = value;
     for (const [pattern, target] of patterns) {
-      next = next.replace(pattern, target);
+      patterned = patterned.replace(pattern, target);
     }
 
-    if (translateCache.size >= TRANSLATE_CACHE_MAX) translateCache.clear();
-    translateCache.set(value, next);
+    let next = patterned;
+    if (patterned === value) {
+      const phraseCandidate = replaceEmbeddedPhrases(value);
+      if (phraseCandidate !== value && !hasBrokenMixedSentence(value, phraseCandidate)) {
+        next = phraseCandidate;
+        for (const [pattern, target] of patterns) {
+          next = next.replace(pattern, target);
+        }
+      }
+    }
+
+    // 3. 确定性 2~3 词 UI 语法兜底（覆盖新版本动态组合按钮/标题/菜单，零混杂风险）
+    if (next === value) {
+      const compound = translateCompoundUiLabel(normTrimmed);
+      if (compound !== undefined) {
+        next = leading + compound + trailing;
+      }
+    }
+
+    putTranslateCache(value, next);
     return next;
   }
 
-  // 严格安全边界过滤：保护 AI 回答正文、用户消息、Markdown 渲染块、思考过程、内置代码查看器与富文本输入区不被篡改
+  // 属性翻译安全排除（仅排除脚本、样式、终端、代码编辑器及显式声明不翻译的节点，允许 input/textarea 翻译 placeholder 等属性）
+  const ATTR_SKIP_SELECTOR = [
+    'script', 'style', '.xterm', '.monaco-editor', '.cm-editor',
+    '[translate="no"]', '.notranslate'
+  ].join(', ');
+
+  // 严格安全边界过滤：保护 AI 回答正文、用户消息、Markdown 渲染块、代码查看器、文件路径、快捷键与 Lexical 斜杠输入区不被篡改
+  // 注意：放开普通下拉框 (select / role="combobox" / role="listbox") 与工具折叠面板标题，仅精准跳过 Lexical 富文本与自动补全菜单
   const SKIP_SELECTOR = [
-    'script', 'style', 'textarea', 'input', 'select', 'code', 'pre',
+    'script', 'style', 'textarea', 'input', 'code', 'pre', 'kbd',
+    'a[href^="file:"]', '[data-testid*="file-path"]', '[data-testid*="filepath"]', '[data-testid*="command-text"]',
     '.xterm', '.monaco-editor', '.cm-editor',
     '.code-line', '.line-content', '[data-testid="code-gutter"]',
     '[contenteditable="true"]', '[contenteditable=""]',
-    '[role="combobox"]', '[role="textbox"]', '[role="listbox"]',
+    '[role="textbox"]',
     '[data-lexical-editor]', '[data-lexical-text]', '[data-mention-menu]',
+    '#typeahead-menu', '[id*="typeahead"]', '[data-testid*="typeahead"]',
+    '[aria-label="Typeahead menu"]', '[aria-label="自动补全菜单"]',
+    '[data-testid="menu-option-label"]', '[data-testid="menu-option-description"]',
     '[data-testid="agent-input-box"] p.pointer-events-none',
+    '[data-testid="agent-input-box"] div.pointer-events-none',
+    '[data-testid="agent-input-box"] span.pointer-events-none',
     '[data-testid="planner-response-text"]',
     '[data-testid="user-input-step"]',
     '[data-testid="user-message-bubble"]',
@@ -1394,26 +3531,76 @@ const overlaySource = String.raw`
     '[data-testid="voice-agent-message"]',
     '[data-testid="comment-card-text"]',
     '[data-testid="pdf-text-layer"]',
-    '[data-testid="tab-file-tree-sidebar"]',
     '[data-testid="breadcrumb-segment"]',
-    '[data-testid="tool-group-collapsible"]',
     'nav[aria-label*="breadcrumbs"] *',
     'nav[aria-label*="面包屑"] *',
     '.md-divider-spacing', '.markdown-frontmatter', '.prose', '.markdown', '.cursor-edit',
     '[translate="no"]', '.notranslate'
   ].join(', ');
 
+  const observedRoots = new WeakSet();
+  const skipElementCache = new WeakMap();
+  const attrSkipCache = new WeakMap();
+
+  function shouldSkipElement(element) {
+    if (!element) return true;
+    const cached = skipElementCache.get(element);
+    if (cached !== undefined) return cached;
+    const skipped = !!element.closest?.(SKIP_SELECTOR);
+    skipElementCache.set(element, skipped);
+    return skipped;
+  }
+
   function shouldSkip(node) {
     if (!node) return true;
     if (node.nodeType === Node.DOCUMENT_NODE || node.nodeType === Node.DOCUMENT_FRAGMENT_NODE) return false;
     const element = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
-    return !element || !!element.closest?.(SKIP_SELECTOR);
+    return shouldSkipElement(element);
+  }
+
+  const FILE_TREE_SECTION_HEADERS = new Set([
+    'Workspace', 'Workspaces', 'Project', 'Projects', 'Artifacts', 'Uploads',
+    'Sources', 'Overview', 'Changes', 'Staged', 'Unstaged', 'Recent', 'Files'
+  ]);
+
+  function hasLeadingIconInRow(node) {
+    if (!node) return false;
+    const isIconCarrier = (el) =>
+      el &&
+      el.nodeType === Node.ELEMENT_NODE &&
+      (el.tagName === 'SVG' || el.tagName === 'IMG' || !!el.querySelector?.('svg, img'));
+    let cur = node.previousSibling;
+    while (cur) {
+      if (isIconCarrier(cur)) return true;
+      cur = cur.previousSibling;
+    }
+    const parent = node.parentElement;
+    if (parent && (parent.tagName === 'SPAN' || parent.tagName === 'DIV')) {
+      let pPrev = parent.previousElementSibling;
+      while (pPrev) {
+        if (isIconCarrier(pPrev)) return true;
+        pPrev = pPrev.previousElementSibling;
+      }
+    }
+    return false;
   }
 
   function translateElement(element) {
+    if (!element || element.nodeType !== Node.ELEMENT_NODE) return;
+    let skipAttr = attrSkipCache.get(element);
+    if (skipAttr === undefined) {
+      skipAttr = !!element.closest?.(ATTR_SKIP_SELECTOR);
+      attrSkipCache.set(element, skipAttr);
+    }
+    if (skipAttr) return;
+    const inFileTree = !!element.closest?.('[data-testid="tab-file-tree-sidebar"]');
     for (const attr of ['aria-label', 'title', 'placeholder', 'alt']) {
       const value = element.getAttribute?.(attr);
       if (!value || !/[A-Za-z]/.test(value)) continue;
+      if (inFileTree && attr !== 'placeholder') {
+        const normAttr = value.replace(/[\s\u00a0]+/g, ' ').trim();
+        if (!isMultiTokenPhrase(normAttr) || !phrasesLower.has(normAttr.toLowerCase())) continue;
+      }
       const translated = translate(value);
       if (translated !== value) {
         element.setAttribute(attr, translated);
@@ -1421,32 +3608,167 @@ const overlaySource = String.raw`
     }
   }
 
-  function translateNode(root) {
-    if (!root) return;
-    if (shouldSkip(root)) return;
-    if (root.nodeType === Node.TEXT_NODE) {
-      const raw = root.nodeValue || '';
-      if (!raw.trim() || !/[A-Za-z]/.test(raw)) return;
-      const translated = translate(raw);
-      if (translated !== raw) {
-        root.nodeValue = translated;
+  function inspectNestedRoot(element) {
+    if (!element || element.nodeType !== Node.ELEMENT_NODE) return;
+    if (element.shadowRoot) {
+      ensureSlashStyle(element.shadowRoot);
+      observeRoot(element.shadowRoot);
+      translateNode(element.shadowRoot);
+    }
+    if (element.tagName === 'IFRAME') {
+      try {
+        const doc = element.contentDocument;
+        if (doc && doc.documentElement) {
+          doc.documentElement.lang = 'zh-CN';
+          ensureSlashStyle(doc.head || doc.documentElement);
+          observeRoot(doc.documentElement);
+          translateNode(doc.body || doc.documentElement);
+        }
+      } catch {}
+      if (!element.__antigravityIframeBound) {
+        element.__antigravityIframeBound = true;
+        element.addEventListener('load', () => {
+          safeTranslate(() => inspectNestedRoot(element));
+        });
       }
+    }
+  }
+
+  function translateInlineConnector(node, raw) {
+    const prev = node.previousSibling;
+    const next = node.nextSibling;
+    const isInlineRichChild = (el) =>
+      el &&
+      el.nodeType === Node.ELEMENT_NODE &&
+      (el.tagName === 'A' ||
+        el.tagName === 'BUTTON' ||
+        el.tagName === 'STRONG' ||
+        el.tagName === 'B' ||
+        el.tagName === 'SPAN');
+    if (!isInlineRichChild(prev) && !isInlineRichChild(next)) return raw;
+    if (/^,\s*or\s*$/i.test(raw)) return '，或 ';
+    if (/^\s+or\s+$/i.test(raw)) return ' 或 ';
+    if (/^,\s*and\s*$/i.test(raw)) return '，以及 ';
+    if (/^\s+and\s+$/i.test(raw)) return ' 与 ';
+    if (/^\s+including\s*$/i.test(raw)) return ' 及其包含的 ';
+    if (raw === '.' && isInlineRichChild(prev) && /[\u4e00-\u9fa5]$/.test((prev.textContent || '').trim())) {
+      return '。';
+    }
+    return raw;
+  }
+
+  const UI_CJK_SPACE_HEAL_SELECTOR =
+    'button, [role="button"], [role="menuitem"], [role="tab"], [role="option"], label, h1, h2, h3, h4';
+
+  function healAdjacentCjkSpace(node) {
+    const parent = node.parentElement;
+    if (!parent || !parent.closest?.(UI_CJK_SPACE_HEAL_SELECTOR)) return;
+    const val = node.nodeValue || '';
+    if (/^[ \t]*[\u4e00-\u9fa5]/.test(val)) {
+      if (/^[ \t]+[\u4e00-\u9fa5]/.test(val)) {
+        const prevText = (node.previousSibling?.textContent || '').trim();
+        if (/[\u4e00-\u9fa5]$/.test(prevText)) {
+          node.nodeValue = val.replace(/^[ \t]+/, '');
+        }
+      }
+      const prev = node.previousSibling;
+      if (prev && prev.nodeType === Node.TEXT_NODE) {
+        if (/[\u4e00-\u9fa5][ \t]+$/.test(prev.nodeValue || '')) {
+          prev.nodeValue = prev.nodeValue.replace(/[ \t]+$/, '');
+        } else if (/^[ \t]+$/.test(prev.nodeValue || '')) {
+          const prevPrevText = (prev.previousSibling?.textContent || '').trim();
+          if (/[\u4e00-\u9fa5]$/.test(prevPrevText)) {
+            prev.nodeValue = '';
+          }
+        }
+      } else if (parent.tagName === 'SPAN' && parent.previousSibling?.nodeType === Node.TEXT_NODE) {
+        const gap = parent.previousSibling;
+        if (/^[ \t]+$/.test(gap.nodeValue || '')) {
+          const beforeGap = (gap.previousSibling?.textContent || '').trim();
+          if (/[\u4e00-\u9fa5]$/.test(beforeGap)) {
+            gap.nodeValue = '';
+          }
+        }
+      }
+    }
+    if (/[\u4e00-\u9fa5][ \t]+$/.test(node.nodeValue || '')) {
+      const nextText = (node.nextSibling?.textContent || '').trim();
+      if (/^[\u4e00-\u9fa5]/.test(nextText)) {
+        node.nodeValue = node.nodeValue.replace(/[ \t]+$/, '');
+      }
+    }
+  }
+
+  function translateTextNode(node) {
+    const raw = node.nodeValue || '';
+    if (!raw.trim()) return;
+    if (raw === '.') {
+      const punct = translateInlineConnector(node, raw);
+      if (punct !== raw) node.nodeValue = punct;
       return;
     }
-    if (root.nodeType !== Node.ELEMENT_NODE && root.nodeType !== Node.DOCUMENT_NODE) return;
-    if (root.nodeType === Node.ELEMENT_NODE) translateElement(root);
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
+    if (/[\u4e00-\u9fa5]/.test(raw) && !/[A-Za-z]/.test(raw)) {
+      healAdjacentCjkSpace(node);
+      return;
+    }
+    if (!/[A-Za-z]/.test(raw)) return;
+
+    const parent = node.parentElement;
+    if (parent && parent.closest?.('[data-testid="tab-file-tree-sidebar"]')) {
+      if (hasLeadingIconInRow(node)) return;
+      const norm = raw.replace(/[\s\u00a0]+/g, ' ').trim();
+      const isAllowedHeader = FILE_TREE_SECTION_HEADERS.has(norm);
+      const isAllowedPhrase = isMultiTokenPhrase(norm) && phrasesLower.has(norm.toLowerCase());
+      if (!isAllowedHeader && !isAllowedPhrase) return;
+    }
+
+    const connectorFixed = translateInlineConnector(node, raw);
+    if (connectorFixed !== raw) {
+      node.nodeValue = connectorFixed;
+      return;
+    }
+    const translated = translate(raw);
+    if (translated !== raw) {
+      node.nodeValue = translated;
+      healAdjacentCjkSpace(node);
+    }
+  }
+
+  function translateNode(root) {
+    if (!root) return;
+    if (root.nodeType === Node.ELEMENT_NODE && (root.tagName === 'INPUT' || root.tagName === 'TEXTAREA')) {
+      translateElement(root);
+      return;
+    }
+    if (shouldSkip(root)) return;
+    if (root.nodeType === Node.TEXT_NODE) {
+      translateTextNode(root);
+      return;
+    }
+    if (
+      root.nodeType !== Node.ELEMENT_NODE &&
+      root.nodeType !== Node.DOCUMENT_NODE &&
+      root.nodeType !== Node.DOCUMENT_FRAGMENT_NODE
+    ) {
+      return;
+    }
+    if (root.nodeType === Node.ELEMENT_NODE) {
+      translateElement(root);
+      inspectNestedRoot(root);
+    }
+    const ownerDoc = root.ownerDocument || document;
+    const walker = ownerDoc.createTreeWalker(root, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
     for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      if (node.nodeType === Node.ELEMENT_NODE && (node.tagName === 'INPUT' || node.tagName === 'TEXTAREA')) {
+        translateElement(node);
+        continue;
+      }
       if (shouldSkip(node)) continue;
       if (node.nodeType === Node.TEXT_NODE) {
-        const raw = node.nodeValue || '';
-        if (!raw.trim() || !/[A-Za-z]/.test(raw)) continue;
-        const translated = translate(raw);
-        if (translated !== raw) {
-          node.nodeValue = translated;
-        }
+        translateTextNode(node);
       } else if (node.nodeType === Node.ELEMENT_NODE) {
         translateElement(node);
+        inspectNestedRoot(node);
       }
     }
   }
@@ -1527,6 +3849,9 @@ const overlaySource = String.raw`
     ["Source", "源码"], ["Target", "目标"], ["Troubleshoot", "故障排除"], ["Troubleshooting", "故障排除"],
     ["Diagnostic", "诊断"], ["Diagnostics", "诊断"], ["Repair", "修复"], ["Recovery", "恢复"],
     ["Policy", "策略"], ["Rule", "规则"], ["Rules", "规则"], ["Quota", "配额"], ["Subscription", "订阅"],
+    ["Plugins", "插件"], ["Skills", "技能"], ["Hook", "钩子"], ["Hooks", "钩子"], ["Voice", "语音"],
+    ["Notebook", "笔记本"], ["Marketplace", "市场"], ["Preview", "预览"], ["Device", "设备"], ["Devices", "设备"],
+    ["Subagent", "子智能体"], ["Subagents", "子智能体"], ["Schedule", "调度"], ["Scheduled", "定时"], ["Automations", "自动化"],
   ]);
 
   const skipWords = new Set(['the', 'a', 'an', 'The', 'A', 'An']);
@@ -1605,23 +3930,27 @@ const overlaySource = String.raw`
   }
 
   // ===== 弹出层、斜杠命令与输入框 Placeholder 零侵入 CSS 汉化支持 =====
-  function ensureSlashStyle() {
-    let style = document.getElementById('antigravity-zh-slash-style');
+  const SLASH_CSS = [
+    '[data-testid="menu-option-label"][data-zh-suffix]::after { content: attr(data-zh-suffix); color: var(--muted-foreground, rgba(128, 128, 128, 0.8)); font-size: 11px; font-weight: normal; margin-left: 4px; pointer-events: none; }',
+    '[data-testid="menu-option-description"][data-zh-desc] { font-size: 0 !important; }',
+    '[data-testid="menu-option-description"][data-zh-desc]::after { content: attr(data-zh-desc); font-size: 12px !important; line-height: normal; }',
+    '[data-testid="agent-input-box"] :is(p, div, span).pointer-events-none[data-zh-placeholder] { font-size: 0 !important; }',
+    '[data-testid="agent-input-box"] :is(p, div, span).pointer-events-none[data-zh-placeholder]::after { content: attr(data-zh-placeholder); font-size: 0.875rem !important; line-height: 1.25rem !important; }'
+  ].join('\n');
+
+  function ensureSlashStyle(rootContainer) {
+    const container = rootContainer || document.head || document.documentElement;
+    if (!container || !container.querySelector) return;
+    let style = container.querySelector('#antigravity-zh-slash-style');
+    if (style && style.dataset.zhReady === '1') return;
     if (!style) {
-      style = document.createElement('style');
+      const ownerDoc = container.ownerDocument || document;
+      style = ownerDoc.createElement('style');
       style.id = 'antigravity-zh-slash-style';
-      (document.head || document.documentElement).appendChild(style);
+      container.appendChild(style);
     }
-    const css = [
-      '[data-testid="menu-option-label"][data-zh-suffix]::after { content: attr(data-zh-suffix); color: var(--muted-foreground, rgba(128, 128, 128, 0.8)); font-size: 11px; font-weight: normal; margin-left: 4px; pointer-events: none; }',
-      '[data-testid="menu-option-description"][data-zh-desc] { font-size: 0 !important; }',
-      '[data-testid="menu-option-description"][data-zh-desc]::after { content: attr(data-zh-desc); font-size: 12px !important; line-height: normal; }',
-      '[data-testid="agent-input-box"] p.pointer-events-none[data-zh-placeholder] { font-size: 0 !important; }',
-      '[data-testid="agent-input-box"] p.pointer-events-none[data-zh-placeholder]::after { content: attr(data-zh-placeholder); font-size: 0.875rem !important; line-height: 1.25rem !important; }'
-    ].join('\n');
-    if (style.textContent !== css) {
-      style.textContent = css;
-    }
+    style.textContent = SLASH_CSS;
+    style.dataset.zhReady = '1';
   }
 
   const slashOptionSuffixes = new Map([
@@ -1637,6 +3966,11 @@ const overlaySource = String.raw`
     ['boost', ' (深度推理)'],
     ['automation', ' (自动化任务)'],
     ['plugin', ' (插件管理)'],
+    ['voice', ' (语音模式)'],
+    ['mcp', ' (MCP 服务)'],
+    ['model', ' (切换模型)'],
+    ['permissions', ' (权限管理)'],
+    ['new', ' (新建对话)'],
     ['clear', ' (清空上下文)'],
     ['help', ' (命令帮助)'],
     ['list', ' (技能列表)'],
@@ -1662,6 +3996,8 @@ const overlaySource = String.raw`
     ['Run an instruction on a recurring schedule or as a one-time timer.', '按周期性计划运行指令，或设置为一次性定时器。'],
     ['Use browser to perform tasks on the web.', '调用浏览器智能体执行网页自动化任务。'],
     ['Invoke a browser agent for web tasks.', '调用浏览器智能体执行网页自动化任务。'],
+    ['Create a step-by-step plan before execution.', '在执行前制定清晰的分步实施方案。'],
+    ['Careful step-by-step planning before execution.', '在执行前进行严谨的分步规划。'],
     ['Grill me about an idea or plan.', '对我进行方案交互式访谈，以对齐需求与设计。'],
     ['Interview me to align on a plan.', '对我进行交互式访谈，以对齐方案与需求。'],
     ['Run an autonomous team of agents to solve complex problems.', '调用多智能体团队自主协作处理复杂项目。'],
@@ -1670,6 +4006,12 @@ const overlaySource = String.raw`
     ['Reflect on recent successes or corrections to capture reusable skills or rules.', '回顾近期的成功经验或修正内容，沉淀为可复用的技能或规则。'],
     ['Run the Boost multi-agent harness for deep thinking.', '为复杂任务调用 Boost 多智能体编排器进行深度推理。'],
     ['Invoke the Boost multi-agent orchestrator for complex tasks.', '为复杂任务调用 Boost 多智能体编排器。'],
+    ['Compact or summarize the conversation context to free up the context window.', '压缩并总结当前对话历史，释放上下文窗口空间。'],
+    ['Summarize conversation history to save context window space.', '总结并压缩对话历史以节省上下文空间。'],
+    ['Design and create a scheduled background automation.', '交互式设计与创建后台定时自动化任务。'],
+    ['Interactive guide to design and create a scheduled background automation.', '交互式设计与创建后台定时自动化任务。'],
+    ['Manage, enable, disable, install, or create plugins.', '管理、启用、禁用、安装或创建扩展插件。'],
+    ['How to manage and create plugins — namespaced bundles of skills, agents, rules, MCP servers and hooks.', '管理与创建包含技能、智能体、规则、MCP 与钩子的插件包。'],
     ['Clear chat history.', '清空对话历史。'],
     ['Show help information.', '显示命令帮助信息。'],
   ]);
@@ -1690,7 +4032,12 @@ const overlaySource = String.raw`
     const descEls = document.querySelectorAll('[data-testid="menu-option-description"]');
     for (const el of descEls) {
       const raw = (el.textContent || '').trim();
-      const desc = slashOptionDescriptions.get(raw) ?? exactPhrases.get(raw) ?? phrases.get(raw);
+      const norm = raw.replace(/\s+/g, ' ');
+      const desc =
+        slashOptionDescriptions.get(raw) ??
+        slashOptionDescriptions.get(norm) ??
+        exactPhrases.get(raw) ??
+        phrasesLower.get(norm.toLowerCase());
       if (desc && desc !== raw) {
         if (el.getAttribute('data-zh-desc') !== desc) {
           el.setAttribute('data-zh-desc', desc);
@@ -1698,36 +4045,62 @@ const overlaySource = String.raw`
       }
     }
 
-    // 零侵入汉化 Lexical 输入框 Placeholder
-    const placeholders = document.querySelectorAll('[data-testid="agent-input-box"] p.pointer-events-none');
+    // 零侵入汉化 Lexical 输入框 Placeholder（兼容 p / div / span 占位节点）
+    const placeholders = document.querySelectorAll('[data-testid="agent-input-box"] :is(p, div, span).pointer-events-none');
     for (const p of placeholders) {
       const raw = (p.textContent || '').trim();
       if (!raw) continue;
-      const zh = phrases.get(raw) ?? exactPhrases.get(raw);
-      if (zh && p.getAttribute('data-zh-placeholder') !== zh) {
+      const zh = phrasesLower.get(raw.toLowerCase()) ?? exactPhrases.get(raw) ?? translate(raw);
+      if (zh && zh !== raw && p.getAttribute('data-zh-placeholder') !== zh) {
         p.setAttribute('data-zh-placeholder', zh);
       }
     }
   }
 
+  const POPUP_SELECTOR = [
+    '[data-testid="title-menu-bar-option"]',
+    '[data-testid="title-menu-bar-item"] + div',
+    '[data-testid="context-menu-popup"]',
+    '[role="menu"]',
+    '[role="listbox"]',
+    '[role="dialog"]',
+    '[role="alertdialog"]',
+    '[data-radix-popper-content-wrapper]',
+    '[data-floating-ui-portal]',
+    '[data-base-ui-portal]',
+    '[cmdk-root]'
+  ].join(', ');
+
+  const TOOLTIP_SELECTOR = '[role="tooltip"], .compact-tooltip, .monaco-hover, [data-testid="hover-card-description"]';
+
   function translateActivePopups() {
     safeTranslate(() => {
       translateSlashOptionLabels();
-      // 1. 顶部菜单栏下拉选项与右键菜单
-      const menuOptions = document.querySelectorAll('[data-testid="title-menu-bar-option"], [data-testid="title-menu-bar-item"] + div, [data-testid="context-menu-popup"], [role="menu"]');
-      for (const opt of menuOptions) {
-        translateNode(opt);
+      // 1. 顶部菜单栏下拉选项、右键菜单、Radix/Shadcn 下拉选择框与模态框
+      const popups = document.querySelectorAll(POPUP_SELECTOR);
+      for (const popup of popups) {
+        translateNode(popup);
       }
       // 2. 悬浮提示气泡与浮层 (Tooltip / HoverCard)
-      const tooltips = document.querySelectorAll('[role="tooltip"], .compact-tooltip, .monaco-hover, [data-testid="hover-card-description"]');
+      const tooltips = document.querySelectorAll(TOOLTIP_SELECTOR);
       for (const tt of tooltips) {
         translateNode(tt);
       }
     });
   }
 
-  // 自愈清理：修复之前旧版在工具调用或动态节点上残留的散装硬翻属性
+  // 自愈清理：修复之前旧版在工具调用或动态节点上残留的散装硬翻属性与按钮文案
   function healPollutedToolAttributes() {
+    const buttons = document.querySelectorAll('button, [role="tab"], [role="radio"]');
+    for (const btn of buttons) {
+      if ((btn.textContent || '').trim() === '预览版') {
+        for (const child of btn.childNodes) {
+          if (child.nodeType === Node.TEXT_NODE && child.nodeValue.trim() === '预览版') {
+            child.nodeValue = child.nodeValue.replace('预览版', '预览');
+          }
+        }
+      }
+    }
     const els = document.querySelectorAll('[title], [aria-label]');
     for (const el of els) {
       const rawText = (el.textContent || '').trim();
@@ -1754,6 +4127,105 @@ const overlaySource = String.raw`
     }
   }
 
+  const SLASH_MUTATION_SELECTOR = '#typeahead-menu, [id*="typeahead"], [data-testid*="typeahead"], [data-testid*="menu-option"], [data-testid="agent-input-box"]';
+  const slashTouchCache = new WeakMap();
+
+  function isInsideSlashArea(element) {
+    if (!element) return false;
+    const cached = slashTouchCache.get(element);
+    if (cached !== undefined) return cached;
+    const hit = !!element.closest?.(SLASH_MUTATION_SELECTOR);
+    slashTouchCache.set(element, hit);
+    return hit;
+  }
+
+  function handleMutations(mutations) {
+    if (isPatching) return;
+    safeTranslate(() => {
+      let shouldTranslateTitles = false;
+      let shouldCheckSlash = false;
+      for (const mutation of mutations) {
+        if (mutation.type === 'characterData') {
+          translateNode(mutation.target);
+          const parentEl = mutation.target.parentElement;
+          if (parentEl) {
+            if (isConversationTitle(parentEl)) shouldTranslateTitles = true;
+            if (!shouldCheckSlash && isInsideSlashArea(parentEl)) shouldCheckSlash = true;
+          }
+        } else if (mutation.type === 'attributes') {
+          translateElement(mutation.target);
+        } else {
+          if (!shouldCheckSlash && mutation.target && mutation.target.nodeType === Node.ELEMENT_NODE && isInsideSlashArea(mutation.target)) {
+            shouldCheckSlash = true;
+          }
+          for (const node of mutation.addedNodes) {
+            translateNode(node);
+            if (node.nodeType === Node.ELEMENT_NODE) {
+              if (!shouldTranslateTitles) {
+                if (
+                  node.matches?.('[data-testid="conversation-row-sidebar"]') ||
+                  (node.firstElementChild && node.querySelector?.('[data-testid="conversation-row-sidebar"]'))
+                ) {
+                  shouldTranslateTitles = true;
+                }
+              }
+              if (!shouldCheckSlash) {
+                if (
+                  isInsideSlashArea(node) ||
+                  (node.firstElementChild && node.querySelector?.('[data-testid="menu-option-label"], [data-testid="agent-input-box"]'))
+                ) {
+                  shouldCheckSlash = true;
+                }
+              }
+            }
+          }
+        }
+      }
+      if (shouldTranslateTitles) {
+        translateConversationTitles();
+      }
+      if (shouldCheckSlash) {
+        translateSlashOptionLabels();
+      }
+    });
+  }
+
+  function observeRoot(rootNode) {
+    if (!rootNode || observedRoots.has(rootNode)) return;
+    observedRoots.add(rootNode);
+    const observer = new MutationObserver(handleMutations);
+    observer.observe(rootNode, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ['aria-label', 'title', 'placeholder', 'alt'],
+    });
+    if (!window.__antigravityZhPatchObservers) {
+      window.__antigravityZhPatchObservers = [];
+    }
+    window.__antigravityZhPatchObservers.push(observer);
+    return observer;
+  }
+
+  let popupTimer = null;
+  let popupFollowupTimer = null;
+
+  function schedulePopupCheck(delayMs, followupMs) {
+    if (popupTimer) clearTimeout(popupTimer);
+    popupTimer = setTimeout(() => {
+      popupTimer = null;
+      translateActivePopups();
+    }, delayMs);
+    if (followupMs) {
+      if (popupFollowupTimer) clearTimeout(popupFollowupTimer);
+      popupFollowupTimer = setTimeout(() => {
+        popupFollowupTimer = null;
+        translateActivePopups();
+      }, followupMs);
+    }
+  }
+
   function run() {
     document.documentElement.lang = 'zh-CN';
     safeTranslate(() => {
@@ -1763,76 +4235,80 @@ const overlaySource = String.raw`
       translateActivePopups();
     });
 
-    window.__antigravityZhPatchObserver = new MutationObserver((mutations) => {
-      if (isPatching) return;
-      safeTranslate(() => {
-        let shouldTranslateTitles = false;
-        for (const mutation of mutations) {
-          if (mutation.type === 'characterData') {
-            translateNode(mutation.target);
-            if (mutation.target.parentElement && isConversationTitle(mutation.target.parentElement)) {
-              shouldTranslateTitles = true;
-            }
-          } else if (mutation.type === 'attributes') {
-            translateElement(mutation.target);
-          } else {
-            for (const node of mutation.addedNodes) {
-              translateNode(node);
-              if (node.nodeType === Node.ELEMENT_NODE) {
-                if (node.querySelector && node.querySelector('[data-testid="conversation-row-sidebar"]')) {
-                  shouldTranslateTitles = true;
-                }
-                if (node.matches && node.matches('[data-testid="conversation-row-sidebar"]')) {
-                  shouldTranslateTitles = true;
-                }
-              }
-            }
-          }
-        }
-        if (shouldTranslateTitles) {
-          translateConversationTitles();
-        }
-        translateSlashOptionLabels();
-      });
-    });
+    window.__antigravityZhPatchObserver = observeRoot(document.documentElement);
 
-    window.__antigravityZhPatchObserver.observe(document.documentElement, {
-      childList: true,
-      subtree: true,
-      characterData: true,
-      attributes: true,
-      attributeFilter: ['aria-label', 'title', 'placeholder', 'alt'],
-    });
+    const onInput = () => {
+      schedulePopupCheck(50, 0);
+    };
 
-    let inputDebounce = null;
-    document.addEventListener('input', () => {
-      if (inputDebounce) clearTimeout(inputDebounce);
-      inputDebounce = setTimeout(translateActivePopups, 50);
-    }, true);
+    const onClick = () => {
+      schedulePopupCheck(20, 120);
+    };
 
-    document.addEventListener('click', () => {
-      setTimeout(translateActivePopups, 20);
-      setTimeout(translateActivePopups, 120);
-    }, true);
-
-    document.addEventListener('mouseover', (e) => {
-      if (!e.target || !e.target.closest) return;
-      if (e.target.closest('[data-testid="title-menu-bar-item"]') || e.target.closest('[data-testid="title-menu-bar-option"]')) {
-        setTimeout(translateActivePopups, 20);
-        setTimeout(translateActivePopups, 80);
-      } else if (e.target.closest('button, [role="button"], [data-tooltip-id], [role="tab"], .action-item')) {
-        setTimeout(translateActivePopups, 30);
-        setTimeout(translateActivePopups, 120);
+    let lastHoverTarget = null;
+    let lastHoverTime = 0;
+    const onMouseOver = (e) => {
+      const target = e.target;
+      if (!target || target === lastHoverTarget || !target.closest) return;
+      lastHoverTarget = target;
+      if (target.closest('[data-testid="title-menu-bar-item"], [data-testid="title-menu-bar-option"]')) {
+        schedulePopupCheck(20, 90);
+        return;
       }
-    }, true);
+      const now = Date.now();
+      if (now - lastHoverTime < 150) return;
+      if (target.closest('button, [role="button"], [role="combobox"], [data-tooltip-id], [role="tab"], .action-item')) {
+        lastHoverTime = now;
+        schedulePopupCheck(35, 130);
+      }
+    };
 
-    if (window.__antigravityPopupInterval) clearInterval(window.__antigravityPopupInterval);
-    window.__antigravityPopupInterval = setInterval(translateActivePopups, 500);
+    document.addEventListener('input', onInput, true);
+    document.addEventListener('click', onClick, true);
+    document.addEventListener('mouseover', onMouseOver, true);
 
+    if (window.__antigravityPopupInterval) {
+      clearInterval(window.__antigravityPopupInterval);
+      window.__antigravityPopupInterval = null;
+    }
     if (window.__antigravityTitleInterval) clearInterval(window.__antigravityTitleInterval);
     window.__antigravityTitleInterval = setInterval(() => {
+      if (document.hidden) return;
       safeTranslate(translateConversationTitles);
-    }, 2000);
+    }, 10000);
+
+    window.__antigravityCleanup = () => {
+      window.removeEventListener('DOMContentLoaded', run);
+      document.removeEventListener('input', onInput, true);
+      document.removeEventListener('click', onClick, true);
+      document.removeEventListener('mouseover', onMouseOver, true);
+      if (popupTimer) {
+        clearTimeout(popupTimer);
+        popupTimer = null;
+      }
+      if (popupFollowupTimer) {
+        clearTimeout(popupFollowupTimer);
+        popupFollowupTimer = null;
+      }
+      if (window.__antigravityPopupInterval) {
+        clearInterval(window.__antigravityPopupInterval);
+        window.__antigravityPopupInterval = null;
+      }
+      if (window.__antigravityTitleInterval) {
+        clearInterval(window.__antigravityTitleInterval);
+        window.__antigravityTitleInterval = null;
+      }
+      if (Array.isArray(window.__antigravityZhPatchObservers)) {
+        for (const obs of window.__antigravityZhPatchObservers) {
+          try { obs.disconnect(); } catch {}
+        }
+        window.__antigravityZhPatchObservers = [];
+      }
+      exactPhrases.clear();
+      phrasesLower.clear();
+      phrasePrefixMap.clear();
+      translateCache.clear();
+    };
   }
 
   if (document.readyState === 'loading') {
@@ -1861,20 +4337,29 @@ function getActivePortFileCandidates() {
   return candidates;
 }
 
-function readPortFromActivePortFile() {
+function readActivePortInfo() {
   for (const filePath of getActivePortFileCandidates()) {
     try {
       if (fs.existsSync(filePath)) {
-        const content = fs.readFileSync(filePath, 'utf8');
-        const firstLine = (content.split(/\r?\n/)[0] || '').trim();
+        const lines = fs.readFileSync(filePath, 'utf8').split(/\r?\n/);
+        const firstLine = (lines[0] || '').trim();
+        const secondLine = (lines[1] || '').trim();
         const port = Number(firstLine);
         if (Number.isInteger(port) && port > 0 && port < 65536) {
-          return port;
+          return {
+            port,
+            wsPath: secondLine.startsWith('/') ? secondLine : ''
+          };
         }
       }
     } catch {}
   }
   return null;
+}
+
+function readPortFromActivePortFile() {
+  const info = readActivePortInfo();
+  return info ? info.port : null;
 }
 
 // 严格校验是否为真正的 Chromium CDP 端口（彻底排除返回 200 HTML 的 Sidecar 扩展进程端口）
@@ -1970,9 +4455,9 @@ async function getValidDebugPorts() {
     return cachedPorts;
   }
 
-  // 3. 兜底：通过进程与端口扫描并严格过滤出真正的 CDP 端口
+  // 3. 兜底：通过进程与端口扫描并严格过滤出真正的 CDP 端口（节流至 12 秒，避免未启动软件时频繁拉起 tasklist）
   const now = Date.now();
-  if (now - lastPortScanTime > 1500) {
+  if (now - lastPortScanTime > 12000) {
     lastPortScanTime = now;
     const currentPids = antigravityPids();
     if (currentPids.length === 0) {
@@ -1992,19 +4477,38 @@ async function getValidDebugPorts() {
   return cachedPorts;
 }
 
+function isInjectableTarget(target) {
+  if (!target) return false;
+  const validType = target.type === 'page' || target.type === 'webview' || target.type === 'iframe';
+  if (!validType) return false;
+  const url = String(target.url || '');
+  if (!url || url === 'about:blank' || /^(?:devtools|chrome-extension|data|blob):/i.test(url)) return false;
+  if (/^https?:/i.test(url)) {
+    try {
+      const host = new URL(url).hostname;
+      if (host !== '127.0.0.1' && host !== 'localhost' && host !== '[::1]') {
+        return false;
+      }
+    } catch {
+      return false;
+    }
+  }
+  return true;
+}
+
 async function targetsForPort(port) {
   try {
     const response = await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(1000) });
     if (!response.ok) return [];
     const targets = await response.json();
     if (!Array.isArray(targets)) return [];
-    return targets.filter((target) => target.type === 'page' && target.webSocketDebuggerUrl);
+    return targets.filter((target) => isInjectableTarget(target) && target.webSocketDebuggerUrl);
   } catch {
     return [];
   }
 }
 
-function cdpCall(ws, method, params = {}) {
+function cdpCall(ws, method, params = {}, sessionId = undefined) {
   const id = cdpCall.nextId = (cdpCall.nextId || 0) + 1;
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
@@ -2046,7 +4550,8 @@ function cdpCall(ws, method, params = {}) {
     ws.addEventListener('close', onClose);
 
     try {
-      ws.send(JSON.stringify({ id, method, params }));
+      const payload = sessionId ? { id, method, params, sessionId } : { id, method, params };
+      ws.send(JSON.stringify(payload));
     } catch (e) {
       cleanup();
       reject(e);
@@ -2054,14 +4559,225 @@ function cdpCall(ws, method, params = {}) {
   });
 }
 
-const injectedTargetVersions = new Map();
+// 记录已注入目标的状态（targetId -> { url, version, verifiedAt, scriptId }），避免每轮轮询重复建立 WebSocket 与重复堆叠预加载脚本
+const injectedTargetState = new Map();
+const TARGET_REVERIFY_INTERVAL_MS = 60000;
 
-async function injectTarget(target) {
-  const targetId = target.id;
-  const ws = new WebSocket(target.webSocketDebuggerUrl);
+function isTargetRecentlyVerified(targetId, url, now) {
+  if (!targetId) return false;
+  const state = injectedTargetState.get(targetId);
+  if (!state) return false;
+  return state.version === PATCH_VERSION && state.url === url && (now - state.verifiedAt) < TARGET_REVERIFY_INTERVAL_MS;
+}
 
+function pruneStaleTargets(activeIds) {
+  for (const key of injectedTargetState.keys()) {
+    if (!activeIds.has(key)) {
+      injectedTargetState.delete(key);
+    }
+  }
+}
+
+// 兼容 Node.js 18 / 20 LTS（未内置全局 WebSocket 时自动回退到标准库 http + crypto 实现的轻量 RFC 6455 客户端）
+class MinimalWebSocket {
+  constructor(url) {
+    this._listeners = { open: new Set(), message: new Set(), error: new Set(), close: new Set() };
+    this.onopen = null;
+    this.onmessage = null;
+    this.onerror = null;
+    this.onclose = null;
+    this._socket = null;
+    this._closed = false;
+
+    const parsed = new URL(url);
+    const key = crypto.randomBytes(16).toString('base64');
+    const req = http.request({
+      hostname: parsed.hostname,
+      port: parsed.port || 80,
+      path: parsed.pathname + parsed.search,
+      headers: {
+        Connection: 'Upgrade',
+        Upgrade: 'websocket',
+        'Sec-WebSocket-Key': key,
+        'Sec-WebSocket-Version': '13'
+      }
+    });
+    this._req = req;
+
+    req.on('error', (err) => this._emit('error', err));
+    req.on('response', (res) => {
+      res.resume();
+      this._emit('error', new Error(`Unexpected HTTP status ${res.statusCode}`));
+    });
+    req.on('upgrade', (_res, socket, head) => {
+      this._req = null;
+      if (this._closed) {
+        try { socket.destroy(); } catch {}
+        return;
+      }
+      socket.setNoDelay(true);
+      this._socket = socket;
+
+      let rxBuf = head && head.length ? Buffer.from(head) : Buffer.alloc(0);
+      let fragChunks = [];
+      let fragOpcode = 0;
+
+      const parseFrames = () => {
+        while (rxBuf.length >= 2) {
+          const b0 = rxBuf[0];
+          const b1 = rxBuf[1];
+          const fin = (b0 & 0x80) !== 0;
+          const opcode = b0 & 0x0f;
+          const masked = (b1 & 0x80) !== 0;
+          let len = b1 & 0x7f;
+          let offset = 2;
+          if (len === 126) {
+            if (rxBuf.length < 4) break;
+            len = rxBuf.readUInt16BE(2);
+            offset = 4;
+          } else if (len === 127) {
+            if (rxBuf.length < 10) break;
+            len = rxBuf.readUInt32BE(2) * 4294967296 + rxBuf.readUInt32BE(6);
+            offset = 10;
+          }
+          const totalLen = offset + (masked ? 4 : 0) + len;
+          if (rxBuf.length < totalLen) break;
+
+          let payload = Buffer.from(rxBuf.subarray(offset + (masked ? 4 : 0), totalLen));
+          if (masked) {
+            const mask = rxBuf.subarray(offset, offset + 4);
+            for (let i = 0; i < payload.length; i++) payload[i] ^= mask[i & 3];
+          }
+          rxBuf = rxBuf.subarray(totalLen);
+
+          if (opcode === 0x8) {
+            this._closed = true;
+            try { socket.end(); } catch {}
+            this._emit('close', {});
+            return;
+          }
+          if (opcode === 0x9) {
+            this._sendFrame(0x8a, payload);
+            continue;
+          }
+          if (opcode === 0x0a) continue;
+
+          if (opcode !== 0x0) {
+            fragOpcode = opcode;
+            fragChunks = [payload];
+          } else {
+            fragChunks.push(payload);
+          }
+          if (fin) {
+            const full = fragChunks.length === 1 ? fragChunks[0] : Buffer.concat(fragChunks);
+            fragChunks = [];
+            if (fragOpcode === 0x1) {
+              this._emit('message', { data: full.toString('utf8') });
+            }
+          }
+        }
+      };
+
+      socket.on('data', (chunk) => {
+        rxBuf = rxBuf.length === 0 ? chunk : Buffer.concat([rxBuf, chunk]);
+        parseFrames();
+      });
+      socket.on('error', (err) => this._emit('error', err));
+      socket.on('close', () => {
+        this._closed = true;
+        this._emit('close', {});
+      });
+
+      queueMicrotask(() => {
+        if (!this._closed) {
+          this._emit('open', {});
+          if (rxBuf.length > 0) parseFrames();
+        }
+      });
+    });
+
+    req.end();
+  }
+
+  addEventListener(type, fn) {
+    if (this._listeners[type]) this._listeners[type].add(fn);
+  }
+
+  removeEventListener(type, fn) {
+    if (this._listeners[type]) this._listeners[type].delete(fn);
+  }
+
+  _emit(type, event) {
+    const handler = this[`on${type}`];
+    if (typeof handler === 'function') {
+      try { handler(event); } catch {}
+    }
+    const set = this._listeners[type];
+    if (set) {
+      for (const fn of [...set]) {
+        try { fn(event); } catch {}
+      }
+    }
+  }
+
+  _sendFrame(firstByte, payloadBuf) {
+    if (!this._socket || this._closed) return;
+    const len = payloadBuf.length;
+    const mask = crypto.randomBytes(4);
+    let headerLen = 2;
+    if (len >= 65536) headerLen = 10;
+    else if (len >= 126) headerLen = 4;
+
+    const frame = Buffer.allocUnsafe(headerLen + 4 + len);
+    frame[0] = firstByte;
+    if (len < 126) {
+      frame[1] = 0x80 | len;
+    } else if (len < 65536) {
+      frame[1] = 0x80 | 126;
+      frame.writeUInt16BE(len, 2);
+    } else {
+      frame[1] = 0x80 | 127;
+      frame.writeUInt32BE(0, 2);
+      frame.writeUInt32BE(len >>> 0, 6);
+    }
+    mask.copy(frame, headerLen);
+    for (let i = 0; i < len; i++) {
+      frame[headerLen + 4 + i] = payloadBuf[i] ^ mask[i & 3];
+    }
+    this._socket.write(frame);
+  }
+
+  send(data) {
+    this._sendFrame(0x81, Buffer.from(String(data), 'utf8'));
+  }
+
+  close() {
+    if (this._closed) return;
+    this._closed = true;
+    if (this._req) {
+      try { this._req.destroy(); } catch {}
+      this._req = null;
+    }
+    if (this._socket) {
+      try {
+        this._sendFrame(0x88, Buffer.alloc(0));
+        this._socket.end();
+      } catch {
+        try { this._socket.destroy(); } catch {}
+      }
+    }
+  }
+}
+
+const WebSocketImpl = typeof WebSocket === 'function' ? WebSocket : MinimalWebSocket;
+
+async function openWebSocket(url) {
+  const ws = new WebSocketImpl(url);
   await new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error('websocket timed out')), 1500);
+    const timeout = setTimeout(() => {
+      try { ws.close(); } catch {}
+      reject(new Error('websocket timed out'));
+    }, 1500);
     ws.onopen = () => {
       clearTimeout(timeout);
       resolve();
@@ -2071,8 +4787,21 @@ async function injectTarget(target) {
       reject(e);
     };
   });
+  return ws;
+}
+
+async function injectTarget(target) {
+  const targetId = target.id;
+  const targetUrl = String(target.url || '');
+  const now = Date.now();
+  if (isTargetRecentlyVerified(targetId, targetUrl, now)) {
+    return false;
+  }
+
+  const ws = await openWebSocket(target.webSocketDebuggerUrl);
 
   try {
+    const prevState = targetId ? injectedTargetState.get(targetId) : null;
     const checkRes = await cdpCall(ws, 'Runtime.evaluate', {
       expression: 'window.__antigravityZhPatchInstalled',
       returnByValue: true
@@ -2080,48 +4809,168 @@ async function injectTarget(target) {
 
     const currentInstalledVersion = checkRes?.result?.result?.value;
     if (currentInstalledVersion === PATCH_VERSION) {
-      injectedTargetVersions.set(targetId, PATCH_VERSION);
+      if (targetId) {
+        injectedTargetState.set(targetId, {
+          url: targetUrl,
+          version: PATCH_VERSION,
+          verifiedAt: now,
+          scriptId: prevState?.scriptId || null
+        });
+      }
       return false;
     }
 
-    await cdpCall(ws, 'Page.addScriptToEvaluateOnNewDocument', { source: overlaySource });
+    if (prevState?.scriptId) {
+      await cdpCall(ws, 'Page.removeScriptToEvaluateOnNewDocument', { identifier: prevState.scriptId }).catch(() => null);
+    }
+    const addRes = await cdpCall(ws, 'Page.addScriptToEvaluateOnNewDocument', { source: overlaySource }).catch(() => null);
+    const scriptId = addRes?.result?.identifier || null;
     await cdpCall(ws, 'Runtime.evaluate', { expression: overlaySource, awaitPromise: false });
 
-    injectedTargetVersions.set(targetId, PATCH_VERSION);
+    if (targetId) {
+      injectedTargetState.set(targetId, {
+        url: targetUrl,
+        version: PATCH_VERSION,
+        verifiedAt: now,
+        scriptId
+      });
+    }
     return true;
   } finally {
     try { ws.close(); } catch {}
   }
 }
 
+// Electron 44+ 浏览器级 CDP WebSocket 兜底（当 /json/list HTTP 接口关闭或为空时直接通过 DevToolsActivePort 第二行路径注入）
+async function injectViaBrowserWebSocket(port, wsPath, activeIds) {
+  if (!port || !wsPath) return { injectedCount: 0, connected: false };
+  let ws;
+  try {
+    ws = await openWebSocket(`ws://127.0.0.1:${port}${wsPath}`);
+  } catch {
+    return { injectedCount: 0, connected: false };
+  }
+
+  let injectedCount = 0;
+  const now = Date.now();
+  try {
+    const targetsRes = await cdpCall(ws, 'Target.getTargets').catch(() => null);
+    const targetInfos = targetsRes?.result?.targetInfos;
+    if (!Array.isArray(targetInfos)) return { injectedCount: 0, connected: true };
+
+    for (const info of targetInfos) {
+      if (!isInjectableTarget(info) || !info.targetId) continue;
+      activeIds.add(info.targetId);
+      const targetUrl = String(info.url || '');
+      if (isTargetRecentlyVerified(info.targetId, targetUrl, now)) continue;
+
+      let sessionId = null;
+      try {
+        const prevState = injectedTargetState.get(info.targetId);
+        const attachRes = await cdpCall(ws, 'Target.attachToTarget', {
+          targetId: info.targetId,
+          flatten: true
+        });
+        sessionId = attachRes?.result?.sessionId;
+        if (!sessionId) continue;
+
+        const checkRes = await cdpCall(ws, 'Runtime.evaluate', {
+          expression: 'window.__antigravityZhPatchInstalled',
+          returnByValue: true
+        }, sessionId).catch(() => null);
+
+        if (checkRes?.result?.result?.value === PATCH_VERSION) {
+          injectedTargetState.set(info.targetId, {
+            url: targetUrl,
+            version: PATCH_VERSION,
+            verifiedAt: now,
+            scriptId: prevState?.scriptId || null
+          });
+          continue;
+        }
+
+        if (prevState?.scriptId) {
+          await cdpCall(ws, 'Page.removeScriptToEvaluateOnNewDocument', { identifier: prevState.scriptId }, sessionId).catch(() => null);
+        }
+        const addRes = await cdpCall(ws, 'Page.addScriptToEvaluateOnNewDocument', { source: overlaySource }, sessionId).catch(() => null);
+        const scriptId = addRes?.result?.identifier || null;
+        await cdpCall(ws, 'Runtime.evaluate', { expression: overlaySource, awaitPromise: false }, sessionId);
+        injectedTargetState.set(info.targetId, {
+          url: targetUrl,
+          version: PATCH_VERSION,
+          verifiedAt: now,
+          scriptId
+        });
+        injectedCount += 1;
+      } catch {} finally {
+        if (sessionId) {
+          await cdpCall(ws, 'Target.detachFromTarget', { sessionId }).catch(() => null);
+        }
+      }
+    }
+  } finally {
+    try { ws.close(); } catch {}
+  }
+  return { injectedCount, connected: true };
+}
+
 async function injectOnce() {
   let count = 0;
+  let foundAnyHttpTargets = false;
+  const activeIds = new Set();
   const ports = await getValidDebugPorts();
   for (const port of ports) {
     const targets = await targetsForPort(port);
+    if (targets.length > 0) foundAnyHttpTargets = true;
     for (const target of targets) {
+      if (target.id) activeIds.add(target.id);
       try {
         const injected = await injectTarget(target);
         if (injected) count += 1;
       } catch {}
     }
   }
-  return count;
+
+  let hasActivePort = ports.length > 0;
+  if (!foundAnyHttpTargets) {
+    const activeInfo = readActivePortInfo();
+    if (activeInfo && activeInfo.port && activeInfo.wsPath) {
+      const fallbackRes = await injectViaBrowserWebSocket(activeInfo.port, activeInfo.wsPath, activeIds);
+      if (fallbackRes.connected) hasActivePort = true;
+      count += fallbackRes.injectedCount;
+    }
+  }
+
+  pruneStaleTargets(activeIds);
+  return { count, hasActivePort };
+}
+
+function exitIfScriptModified() {
+  if (!INITIAL_SCRIPT_MTIME) return;
+  try {
+    const currentMtime = fs.statSync(__filename).mtimeMs;
+    if (currentMtime && currentMtime !== INITIAL_SCRIPT_MTIME) {
+      process.exit(0);
+    }
+  } catch {}
 }
 
 async function watch() {
   for (;;) {
+    exitIfScriptModified();
+    let hasActivePort = false;
     try {
-      await injectOnce();
+      const res = await injectOnce();
+      hasActivePort = res.hasActivePort;
     } catch {}
-    await new Promise((resolve) => setTimeout(resolve, 2500));
+    await new Promise((resolve) => setTimeout(resolve, hasActivePort ? 5000 : 8000));
   }
 }
 
 if (process.argv.includes('--watch')) {
   watch();
 } else {
-  injectOnce().then((count) => {
+  injectOnce().then(({ count }) => {
     console.log(`已向 ${count} 个 Antigravity 页面注入或更新中文汉化 (v${PATCH_VERSION})。`);
   });
 }
