@@ -8,7 +8,7 @@ const http = require('http');
 const crypto = require('crypto');
 const { execFileSync } = require('child_process');
 
-const PATCH_VERSION = 67;
+const PATCH_VERSION = 68;
 const INITIAL_SCRIPT_MTIME = (() => {
   try {
     return fs.statSync(__filename).mtimeMs;
@@ -33,7 +33,7 @@ const overlaySource = String.raw`
     }
   } catch {}
 
-  const CURRENT_PATCH_VERSION = 67;
+  const CURRENT_PATCH_VERSION = 68;
   if (window.__antigravityZhPatchInstalled === CURRENT_PATCH_VERSION) return;
   if (typeof window.__antigravityCleanup === 'function') {
     try { window.__antigravityCleanup(); } catch {}
@@ -690,6 +690,11 @@ const overlaySource = String.raw`
     ["Storage", "存储"],
     ["Trash", "回收站"],
     ["Clipboard", "剪贴板"],
+    ["Workspaces", "工作区"],
+    ["Goals", "目标"],
+    ["Machine", "全本机"],
+    ["Other", "其他"],
+    ["Worked", "已工作"],
   ]);
 
   // ===== 第二级：多词安全短语与完整句字典 (均为 2 词以上明确 UI 短语，无单字歧义) =====
@@ -2874,7 +2879,142 @@ const overlaySource = String.raw`
     ["Bracket Pair Colorization", "括号配对着色"],
     ["Render Whitespace", "显示空白字符"],
     ["Sticky Scroll", "粘性滚动"],
+
+    // v68 Antigravity 新版界面布局（Knowledge Work / Software Engineering）、权限重组、工作流、分叉与引导页补全
+    ["Interface Layout", "界面布局"],
+    ["Knowledge Work", "知识工作"],
+    ["Simplified interface for research, writing, and everyday tasks.", "面向研究、写作和日常任务的精简界面。"],
+    ["Software Engineering", "软件工程"],
+    ["Full interface for coding, developer tools, and managing agents.", "包含编程、开发者工具与智能体管理的完整界面。"],
+    ["Project 4K", "Project 4K 精简模式"],
+    ["managed by your organization", "由您的组织托管控制"],
+    ["Plan Review Policy", "计划审核策略"],
+    ["This Computer", "本机"],
+    ["Permission Settings", "权限设置"],
+    ["Permission Details", "权限详情"],
+    ["Inherit Global", "继承全局设置"],
+    ["Controls permissions for remote conversations.", "控制远程对话中的智能体权限。"],
+    ["Configure what the agent can do in local and remote conversations.", "配置智能体在本地与远程对话中可执行的操作。"],
+    ["Learn more about", "进一步了解"],
+    ["Modify permissions for file and terminal tools.", "修改文件和终端工具的权限。"],
+    ["Configure GitHub access policies.", "配置 GitHub 访问策略。"],
+    ["Enable Sandbox Mode", "启用沙盒模式"],
+    ["Terminal sandbox is not supported in this environment", "当前环境不支持终端沙盒"],
+    ["Checking availability\u2026", "正在检查可用性…"],
+    ["Checking availability...", "正在检查可用性..."],
+    ["Disabled by organization policy", "已被组织策略禁用"],
+    ["Your This Computer setting", "您的本机全局设置"],
+    ["Your Remote setting", "您的远程全局设置"],
+    ["Inherits your Global Permissions when working on this computer.", "在本机上工作时继承您的全局权限设置。"],
+    ["Inherits your Global Permissions when working in this project.", "在此项目中工作时继承您的全局权限设置。"],
+    ["Inherits your Global Permissions when working in these conversations.", "在这些对话中工作时继承您的全局权限设置。"],
+    ["Inherits your Global Permissions when working remotely.", "在远程环境中工作时继承您的全局权限设置。"],
+    ["Useful for typical development with an emphasis on security. It prioritizes safety over speed by requiring manual approval for all terminal commands and files outside the project directory.", "适用于注重安全性的常规开发。此模式安全优先于速度，执行所有终端命令以及访问项目目录以外的文件都需要人工批准。"],
+    ["Useful for tasks that require file access across your full machine. The agent has full read and write access to all local files, but all proposed terminal commands require manual review and approval before running.", "适用于需要访问整台计算机文件的任务。智能体对所有本地文件拥有完整的读写权限，但所有拟执行的终端命令在运行前均需人工审核与批准。"],
+    ["A high-risk mode that disables all safety barriers. The agent operates with full system access, auto-executes all terminal commands, and reads or writes to all local files without review prompts.", "高风险模式，将禁用所有安全防护屏障。智能体将拥有完整的系统访问权限，自动执行所有终端命令，并在无审核提示的情况下读写所有本地文件。"],
+    ["Your agent\u2019s ability to execute commands is also controlled by enterprise security policies.", "智能体执行命令的能力同时受企业安全策略控制。"],
+    ["Your agent's ability to execute commands is also controlled by enterprise security policies.", "智能体执行命令的能力同时受企业安全策略控制。"],
+    ["Also includes", "同时包含"],
+    ["when working in this project.", "，适用于此项目。"],
+    ["when working in these conversations.", "，适用于这些对话。"],
+    ["This project was created for", "此项目专用于"],
+    ["to have the agent generate a plan.", "即可让智能体生成实施计划。"],
+    ["Use full VCS clones for Best of N", "为 Best of N 使用完整 VCS 克隆"],
+    ["Use full Git clones for Best of N", "为 Best of N 使用完整 Git 克隆"],
+    ["Give each Best of N fork a full clone of your workspace, including its local commit history. Choosing a winner then gives your workspace that fork's state, so the commits it made are kept. Forks take longer to create than the default CitC clone.", "为每个 Best of N 分支提供工作区的完整克隆（含本地提交历史）。选定胜出分支后，您的工作区将应用该分支状态并保留其创建的提交。与默认 CitC 克隆相比，创建分支耗时更长。"],
+    ["Give each Best of N fork its own clone of your Git repository instead of a copy-on-write overlay. Each fork is then a real repository, so commits it makes are kept when you choose it as the winner. Forks take longer to create, and the wait grows with the size of your repository.", "为每个 Best of N 分支创建独立的 Git 仓库克隆，而非写时复制叠加层。每个分支都是真实仓库，因此选定胜出者后会保留其创建的提交。创建分支耗时更长，且等待时间随仓库体积增大而增加。"],
+    ["Sync JJ Worktrees to Head", "将 JJ 工作树同步到 Head"],
+    ["Sync newly created JJ worktrees to head when starting a conversation.", "在开始对话时将新建的 JJ 工作树同步到最新提交 (Head)。"],
+    ["Try out early-stage features before they ship. These may be changed or removed at any time. These features are experimental, and we make no guarantees about performance or functionality.", "在早期功能正式发布前先行体验。这些功能可能随时更改或移除。这些功能尚处于实验阶段，我们对其性能或功能不做任何保证。"],
+    ["Enter to Send", "按 Enter 发送"],
+    ["Send messages with the keyboard's Enter key instead of starting a new line.", "使用键盘 Enter 键直接发送消息，而非换行。"],
+    ["New Conversation Button", "新建对话按钮"],
+    ["Which workspace the New Conversation button and keyboard shortcut start you in.", "设置点击“新建对话”按钮或使用快捷键时默认进入的工作区。"],
+    ["Last Workspace", "上次使用的工作区"],
+    ["Create a new workspace from your first message.", "根据您的首条消息自动创建新工作区。"],
+    ["Start without a workspace, for general questions.", "不关联工作区直接开始，适合通用问答。"],
+    ["Reuse your last workspace.", "复用您上次使用的工作区。"],
+    ["Chat Layout", "聊天布局"],
+    ["Chat Input", "聊天输入"],
+    ["Terminal Placement", "终端显示位置"],
+    ["Choose where terminal sessions appear.", "选择终端会话窗口的显示位置。"],
+    ["Bottom Panel", "底部面板"],
+    ["Side Panel Preview", "侧边栏预览"],
+    ["Context and Quota Indicator", "上下文与配额指示器"],
+    ["Show how full the context window is next to the send button. Click it for a breakdown and to see your model quota.", "在发送按钮旁显示上下文窗口的占用情况。点击可查看明细与模型配额。"],
+    ["GitHub Permissions", "GitHub 权限"],
+    ["Browser Actuation Permissions", "浏览器操作权限"],
+    ["Select your license", "选择您的许可证"],
+    ["Organization Allowed Domains (Read-Only)", "组织允许的域名（只读）"],
+    ["Hide Advanced Settings", "隐藏高级设置"],
+    ["Show Advanced", "显示高级选项"],
+    ["Hide Advanced", "隐藏高级选项"],
+    ["Remote Agents Data", "远程智能体数据"],
+    ["Delete All Remote Agents Data", "删除所有远程智能体数据"],
+    ["Delete All Data", "删除所有数据"],
+    ["Delete All Remote Agents Data?", "确定要删除所有远程智能体数据吗？"],
+    ["Permanently delete your remote conversations, projects, scheduled tasks, connected plugins and settings. Data in the desktop app and your Google account are not affected.", "永久删除您的远程对话、项目、定时任务、已连接插件及设置。桌面端应用和您 Google 账户中的数据不受影响。"],
+    ["This permanently deletes all of your Remote Agents conversations, projects, scheduled tasks, connected plugins and settings, and stops any running remote agents. It can't be undone. Data in the desktop app and your Google account are not affected, and you can keep using Remote Agents afterwards.", "此操作将永久删除您所有的远程智能体对话、项目、定时任务、已连接插件和设置，并停止所有正在运行的远程智能体，且无法撤销。桌面端应用和您 Google 账户中的数据不受影响，您之后仍可继续使用远程智能体。"],
+    ["Couldn't delete your data. Try again.", "无法删除您的数据，请重试。"],
+    ["Checked task", "已检查任务"],
+    ["Checking task", "正在检查任务"],
+    ["Checked command status", "已检查命令状态"],
+    ["Checking command status", "正在检查命令状态"],
+    ["User cancelled agent execution.", "用户已取消智能体执行。"],
+    ["Fork conversation in this folder", "在此文件夹中分叉对话"],
+    ["Keeps working in this folder. Nothing is copied.", "继续在此文件夹中工作，不会复制任何文件。"],
+    ["Rewinds the conversation only. Files in this folder stay as they are now.", "仅回退对话记录，此文件夹中的文件保持当前状态不变。"],
+    ["Fork in Current Workspace", "在当前工作区中分叉"],
+    ["Fork in Shared Workspace", "在共享工作区中分叉"],
+    ["Fork in New Workspace", "在新建工作区中分叉"],
+    ["Shares this repository, with a working copy of its own. Uncommitted changes stay behind.", "共享此代码仓库并拥有独立工作副本，未提交的更改会保留在原处。"],
+    ["A full copy of this workspace, uncommitted changes included.", "创建此工作区的完整副本，包含未提交的更改。"],
+    ["A copy of the workspace snapshot recorded at this step.", "创建在此步骤记录的工作区快照副本。"],
+    ["Keeps working in this workspace. Nothing is copied.", "继续在此工作区中工作，不会复制任何文件。"],
+    ["Rewinds the conversation only. Files in this workspace stay as they are now.", "仅回退对话记录，此工作区中的文件保持当前状态不变。"],
+    ["Side Questions", "旁路提问"],
+    ["Side Question", "旁路提问"],
+    ["No links", "暂无链接"],
+    ["No artifacts generated", "暂未生成产物"],
+    ["No conversations found", "未找到对话"],
+    ["See all", "查看全部"],
+    ["Refreshing...", "正在刷新..."],
+    ["Deleting...", "正在删除..."],
+    ["Downloading...", "正在下载..."],
+    ["Build new features", "构建新功能"],
+    ["Hand off a feature and come back to working code.", "将功能开发交由智能体处理，直接验收可运行的代码。"],
+    ["Debug and fix", "调试与修复"],
+    ["Automatically reproduce bugs, trace causes, test fixes.", "自动复现问题、定位根因并验证修复结果。"],
+    ["Research anything", "研究任意主题"],
+    ["Ask about your code or any topic, get clear answers.", "询问您的代码库或任何主题，获取清晰解答。"],
+    ["Write and edit docs", "撰写与编辑文档"],
+    ["Draft documents, emails, and notes that sound like you.", "起草符合您个人风格的文档、邮件与笔记。"],
+    ["Let's tailor the experience for you. What best describes your work?", "让我们为您量身定制使用体验。以下哪项最符合您的日常工作？"],
+    ["Trouble signing in? Enter authorization code", "登录遇到问题？输入授权码"],
+    ["Sign in in your browser, then paste the authorization code shown on the callback page.", "请在浏览器中完成登录，然后粘贴回调页面上显示的授权码。"],
+    ["Authorization code", "授权码"],
+    ["Paste authorization code", "粘贴授权码"],
+    ["Submit code", "提交授权码"],
+    ["Authorization code was rejected. Paste a fresh code and try again.", "授权码无效或已拒绝，请粘贴新的授权码后重试。"],
+    ["Copied sign-in link to clipboard", "已将登录链接复制到剪贴板"],
+    ["Switched to authorization code sign-in", "已切换为授权码登录方式"],
+    ["Authorization code sign-in is unavailable in this version.", "当前版本不支持授权码登录。"],
+    ["Select Theme", "选择主题"],
+    ["Use theme to be imported with settings", "使用随设置导入的主题"],
+    ["Get Anything Done with", "开启高效工作，携手"],
   ]);
+
+  function formatCompactDuration(text) {
+    if (!text) return '';
+    return text
+      .replace(/(\d+)\s*ms\b/gi, '$1 毫秒')
+      .replace(/(\d+)\s*d\b/gi, '$1 天')
+      .replace(/(\d+)\s*h\b/gi, '$1 小时')
+      .replace(/(\d+)\s*m\b/gi, '$1 分钟')
+      .replace(/(\d+)\s*s\b/gi, '$1 秒')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
 
   function formatDuration(text) {
     if (!text) return '';
@@ -2908,6 +3048,13 @@ const overlaySource = String.raw`
       .replace(/^(\d+)\s*hours?\s+ago$/i, '$1 小时前')
       .replace(/^(\d+)\s*minutes?\s+ago$/i, '$1 分钟前')
       .replace(/^(\d+)\s*seconds?\s+ago$/i, '$1 秒前')
+      .replace(/^(\d+)\s*mo\s+ago$/i, '$1 个月前')
+      .replace(/^(\d+)\s*y\s+ago$/i, '$1 年前')
+      .replace(/^(\d+)\s*w\s+ago$/i, '$1 周前')
+      .replace(/^(\d+)\s*d\s+ago$/i, '$1 天前')
+      .replace(/^(\d+)\s*h\s+ago$/i, '$1 小时前')
+      .replace(/^(\d+)\s*m\s+ago$/i, '$1 分钟前')
+      .replace(/^(\d+)\s*s\s+ago$/i, '$1 秒前')
       .replace(/\(Recommended\)/gi, '(推荐)');
   }
 
@@ -2952,6 +3099,13 @@ const overlaySource = String.raw`
     [/^(\d+)\s*hours?\s+ago$/gi, '$1 小时前'],
     [/^(\d+)\s*minutes?\s+ago$/gi, '$1 分钟前'],
     [/^(\d+)\s*seconds?\s+ago$/gi, '$1 秒前'],
+    [/^(\d+)\s*mo\s+ago$/gi, '$1 个月前'],
+    [/^(\d+)\s*y\s+ago$/gi, '$1 年前'],
+    [/^(\d+)\s*w\s+ago$/gi, '$1 周前'],
+    [/^(\d+)\s*d\s+ago$/gi, '$1 天前'],
+    [/^(\d+)\s*h\s+ago$/gi, '$1 小时前'],
+    [/^(\d+)\s*m\s+ago$/gi, '$1 分钟前'],
+    [/^(\d+)\s*s\s+ago$/gi, '$1 秒前'],
     [/\(Recommended\)/gi, '(推荐)'],
     [/^(\d+)mo$/g, '$1 个月前'],
     [/^(\d+)y$/g, '$1 年前'],
@@ -3078,7 +3232,10 @@ const overlaySource = String.raw`
     [/^Every (\d+) hours?$/gi, '每 $1 小时'],
     [/^Every (\d+) days?$/gi, '每 $1 天'],
     [/^Thought for (\d+)m (\d+)s$/gi, '思考耗时 $1 分 $2 秒'],
+    [/^Worked for (\d+(?:\.\d+)?(?:d|h|m|s|ms)(?:\s+\d+(?:\.\d+)?(?:d|h|m|s|ms))*)\s*·\s*(\d+)\s+updates?$/gi, (_m, dur, n) => '已工作 ' + formatCompactDuration(dur) + ' · ' + n + ' 条更新'],
     [/^Worked for (\d+)m (\d+)s$/gi, '已工作 $1 分 $2 秒'],
+    [/^Worked for (\d+(?:\.\d+)?(?:d|h|m|s|ms)(?:\s+\d+(?:\.\d+)?(?:d|h|m|s|ms))+)$/gi, (_m, dur) => '已工作 ' + formatCompactDuration(dur)],
+    [/^(\d+)\s*updates?$/gi, '$1 条更新'],
     [/^(\d+)m (\d+)s$/g, '$1 分 $2 秒'],
 
     // v2.29.0 动态细分详情展开、系统音频设备名、重置倒计时与通用动态计数器
@@ -3142,6 +3299,24 @@ const overlaySource = String.raw`
     [/^Go to Tab (\d+)$/gi, '前往第 $1 个标签页'],
     [/^Select Tab (\d+)$/gi, '选择第 $1 个标签页'],
     [/^([\d.]+)%\s*of the customization budget is available\.?$/gi, '$1% 的自定义配额预算可用。'],
+
+    // v68 动态规则：工作时长继承说明、实验性功能、引导页标题与 Best of N 短链拼接
+    [/^Give each Best of N fork a full clone of your workspace, including its local commit history\. Choosing a winner then gives your workspace that fork's state, so the commits it made are kept\. Forks take longer to create than the default CitC clone\.(?:\s*See (\S+)\.)?$/i, (_m, link) => '为每个 Best of N 分支提供工作区的完整克隆（含本地提交历史）。选定胜出分支后，您的工作区将应用该分支状态并保留其创建的提交。与默认 CitC 克隆相比，创建分支耗时更长。' + (link ? ' 详见 ' + link + '。' : '')],
+    [/^Give each Best of N fork its own clone of your Git repository instead of a copy-on-write overlay\. Each fork is then a real repository, so commits it makes are kept when you choose it as the winner\. Forks take longer to create, and the wait grows with the size of your repository\.(?:\s*See (\S+)\.)?$/i, (_m, link) => '为每个 Best of N 分支创建独立的 Git 仓库克隆，而非写时复制叠加层。每个分支都是真实仓库，因此选定胜出者后会保留其创建的提交。创建分支耗时更长，且等待时间随仓库体积增大而增加。' + (link ? ' 详见 ' + link + '。' : '')],
+    [/^Inherits your Global Permissions when working (.+?)\.?$/gi, (_m, scope) => {
+      const s = scope.trim().toLowerCase();
+      if (s === 'on this computer') return '在本机上工作时继承您的全局权限设置。';
+      if (s === 'in this project') return '在此项目中工作时继承您的全局权限设置。';
+      if (s === 'in these conversations') return '在这些对话中工作时继承您的全局权限设置。';
+      if (s === 'remotely') return '在远程环境中工作时继承您的全局权限设置。';
+      return '在 ' + scope.trim() + ' 中工作时继承您的全局权限设置。';
+    }],
+    [/^(.+) \(Experimental\)$/g, (_m, label) => {
+      const inner = translate(label);
+      return (inner !== label ? inner : label) + '（实验性）';
+    }],
+    [/^Get Anything Done with (.+)$/g, '使用 $1 高效完成一切任务'],
+    [/^Select (.+) Theme$/g, '选择 $1 主题'],
   ];
 
   // ===== 高性能低内存汉化引擎（O(1) 哈希 + 首词前缀桶扫描，彻底移除超大回溯正则节省 15~30MB V8 JIT 内存） =====
@@ -3702,6 +3877,52 @@ const overlaySource = String.raw`
   function translateTextNode(node) {
     const raw = node.nodeValue || '';
     if (!raw.trim()) return;
+    const parentEl = node.parentElement;
+    if (parentEl && parentEl.closest?.('[data-testid="plan-command-fyi-alert"]')) {
+      const mTrim = raw.match(/^([\s\u00a0]*)([\s\S]*?)([\s\u00a0]*)$/);
+      const lead = mTrim ? mTrim[1] : '';
+      const core = mTrim ? mTrim[2] : raw.trim();
+      const trail = mTrim ? mTrim[3] : '';
+      if (core === 'Type' || core === '类型') {
+        node.nodeValue = lead + '输入' + trail;
+        return;
+      }
+      if (core === 'and select') {
+        node.nodeValue = lead + '并选择' + trail;
+        return;
+      }
+      if (core === 'to have the agent generate a plan.') {
+        node.nodeValue = lead + '即可让智能体生成实施计划。' + trail;
+        return;
+      }
+    }
+    if (parentEl) {
+      const t = raw.trim();
+      if (t === 'when working' || t === 'in this project' || t === 'in these conversations' || t === '.') {
+        const prevText = (node.previousSibling?.nodeValue || node.previousSibling?.textContent || '').trim();
+        if (t === '.' && /^(?:此项目|这些对话)$/.test(prevText)) {
+          node.nodeValue = '。';
+          return;
+        }
+        if (t !== '.' && /Global Permissions|全局权限/.test(parentEl.textContent || '')) {
+          const mTrim = raw.match(/^([\s\u00a0]*)([\s\S]*?)([\s\u00a0]*)$/);
+          const lead = mTrim ? mTrim[1] : '';
+          const trail = mTrim ? mTrim[3] : '';
+          if (t === 'when working') {
+            node.nodeValue = '，适用于';
+            return;
+          }
+          if (t === 'in this project') {
+            node.nodeValue = lead + '此项目' + trail;
+            return;
+          }
+          if (t === 'in these conversations') {
+            node.nodeValue = lead + '这些对话' + trail;
+            return;
+          }
+        }
+      }
+    }
     if (raw === '.') {
       const punct = translateInlineConnector(node, raw);
       if (punct !== raw) node.nodeValue = punct;
